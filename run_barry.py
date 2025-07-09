@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 import lib_run_single
 from desktop_env.desktop_env import DesktopEnv
-from mm_agents.barry_agent import BarryAgent
+from mm_agents.BARRY.barry_agent import BarryAgent
 
 # Logger Configs
 logger = logging.getLogger()
@@ -77,10 +77,7 @@ def config() -> argparse.Namespace:
     # Agent config
     parser.add_argument("--test_config_base_dir", type=str, default="evaluation_examples")
 
-    # Model config - CAMBIO IMPORTANTE: Usar --model en lugar de --vision_model para consistencia
     parser.add_argument("--model", type=str, default="gemini-2.0-flash", help="Vision model for BarryAgent")
-    # Mantener --vision_model para retrocompatibilidad
-    parser.add_argument("--vision_model", type=str, default=None, help="Deprecated: use --model instead")
 
     # Example config
     parser.add_argument("--domain", type=str, default="all")
@@ -91,12 +88,7 @@ def config() -> argparse.Namespace:
     
     parser.add_argument("--task", type=str, default=None, help="Especificar una tarea específica dentro del dominio")
 
-    args = parser.parse_args()
-    
-    # NUEVO: Manejar retrocompatibilidad entre --model y --vision_model
-    if args.vision_model is not None and args.model == "gemini-2.0-flash":
-        args.model = args.vision_model
-        logger.warning("--vision_model is deprecated, use --model instead")
+    args = parser.parse_args()    
     
     return args
 
@@ -117,12 +109,12 @@ def test(args: argparse.Namespace, test_all_meta: dict) -> None:
         "screen_height": args.screen_height,
         "sleep_after_execution": args.sleep_after_execution,
         "max_steps": args.max_steps,
-        "model": args.model,   # CAMBIO: Usar args.model consistentemente
+        "model": args.model,  
         "result_dir": args.result_dir,
     }
 
     agent = BarryAgent(
-        vision_model=args.model,   # CAMBIO: Usar args.model
+        model=args.model, 
         action_space=args.action_space,
         observation_type=args.observation_type,
     )

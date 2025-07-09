@@ -17,7 +17,7 @@ ENV_FAIL_WORD = "error_env"
 CALL_USER = "call_user"
 
 class BarryAgent:
-    def __init__(self, vision_model: str = "gemini-2.0-flash", observation_type: str = "screenshot", action_space: str = "pyautogui"):
+    def __init__(self, model: str = "gemini-2.0-flash", observation_type: str = "screenshot", action_space: str = "pyautogui"):
         """
         Inicializa el agente con la configuración para interactuar con OSWorld y la API de Gemini.
         """
@@ -30,7 +30,7 @@ class BarryAgent:
 
         # Configurar la API de Gemini
         genai.configure(api_key=gemini_api_key)
-        self.vision_model = genai.GenerativeModel(vision_model)
+        self.model = genai.GenerativeModel(model)
 
         # Configurar parámetros del entorno
         self.observation_type = observation_type
@@ -61,7 +61,6 @@ class BarryAgent:
                 screenshot = screenshot.encode('utf-8')
             # Convertir a imagen PIL
             image = Image.open(BytesIO(screenshot))
-            logger.info("Captura de pantalla procesada correctamente")
             return image
         except Exception as e:
             logger.error(f"Error al procesar el screenshot: {e}")
@@ -155,7 +154,7 @@ class BarryAgent:
             """
 
             # Enviar la solicitud a Gemini
-            response = self.vision_model.generate_content([prompt, image])
+            response = self.model.generate_content([prompt, image])
             response_text = response.text.strip()
             
             # Parsear la respuesta
