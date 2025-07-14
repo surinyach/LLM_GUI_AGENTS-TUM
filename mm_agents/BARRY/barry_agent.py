@@ -85,18 +85,24 @@ class BarryAgent:
             logger.info("estoy en el start_router")
 
             if self.first_iteration:
+                logger.info("me voy al planning expert")
+
                 return {"next": "planning_expert"}
+            logger.info("me voy al action expert")
             return {"next": "action_expert"}
         
         def planning_expert(state: State):
             if self.first_iteration:
+                logger.info("nodo planning expert: primera iteración")
                 self.planning_expert.save_main_task(self.main_task)
                 self.first_iteration = False
             
-            instruction_list, subtask = self.planning_expert.predict(
+            logger.info("nodo planning expert: llamando al predict de planning expert")
+            subtask, instruction_list  = self.planning_expert.predict(
                 state.get("action_expert_feedback",""),
                 state.get("reflection_expert_feedback",""), 
                 self.SOM)
+            logger.info(f"nodo planning expert: respuesta del predict de planning expert: subtask:{subtask} , instruction_list: {instruction_list} ")
 
             if instruction_list == "done": # significa que ya no hay nada más que hacer
                 return {
@@ -116,10 +122,12 @@ class BarryAgent:
         def action_expert(state: State):
             if state.get("done", False):
                 return {"osworld_action": "done"}
-
+            logger.info("estoy en el nodo del action expert voy a llamar al predict")
             osworld_action = self.action_expert.predict(self.SOM)
+            logger.info(f"estoy en el nodo del action expert respuesta del predict: {osworld_action}")
 
             if osworld_action.startswith("error:"):
+                logger.info(f"estoy dentro del if error del nodo del action expert, este es el error que ha detectado: {osworld_action}")
                 return {"execution_error": osworld_action,
                         "osworld_action": None, 
                         "new_instruction_list": False}
