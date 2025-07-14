@@ -1,20 +1,22 @@
 import os
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, NamedTuple
 from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
 from io import BytesIO
-import re
-import time
+from .action_expert import ActionExpert
+from .planning_expert import PlanningExpert
+from .reflection_expert import ReflectionExpert
+from .error_expert import ErrorExpert
+
+from dotenv import load_dotenv
+from typing import Annotated, Literal
+from langgraph.graph import StateGraph, START, END
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 logger = logging.getLogger("desktopenv.agent")
-
-# Palabras clave para estados del agente
-FINISH_WORD = "finished"
-WAIT_WORD = "wait"
-ENV_FAIL_WORD = "error_env"
-CALL_USER = "call_user"
 
 class BarryAgent:
     def __init__(self, model: str = "gemini-2.0-flash", observation_type: str = "screenshot", action_space: str = "pyautogui"):
@@ -41,6 +43,169 @@ class BarryAgent:
         self.max_trajectory_length = 50
         self.call_user_count = 0
         self.call_user_tolerance = 3
+        
+
+        # PERCEPTION SYSTEM
+        self.SOM = ""
+        
+
+        self.main_task = ""
+        self.first_iteration = True
+
+        self.action_expert = ActionExpert() 
+        self.planning_expert = PlanningExpert()
+        self.reflection_expert = ReflectionExpert()
+        self.error_expert = ErrorExpert()
+        
+        self.graph = None
+        self.graph_state = {} 
+
+        
+
+        # LANG GRAPH
+
+        # STATE --------------------------------------------------------------------
+
+        class State(TypedDict):
+            #intruction_list: str    # no hace falta guardarla porque se la pasa directamente cuando las crea
+            action_expert_feedback: str
+            reflection_expert_feedback: str
+            info_for_error_expert: str
+            error_expert_feedback: str
+            new_instruction_list: bool
+
+            done: bool
+            osworld_action: str
+        
+
+        graph_builder = StateGraph(State)
+
+        # NODES -----------------------------------------------
+
+        def start_router(state: State):
+            if self.first_iteration:
+                return {"next": "planning_expert"}
+            return {"next": "action_expert"}
+        
+        def planning_expert(state: State):
+            if self.first_iteration:
+                self.planning_expert.save_main_task(self.main_task)
+                self.first_iteration = False
+            
+            instruction_list, subtask = self.planning_expert.predict(
+                state.get("action_expert_feedback",""),
+                state.get("reflection_expert_feedback",""), 
+                self.SOM)
+
+            if instruction_list == "done": # significa que ya no hay nada más que hacer
+                return {
+                "done": True,
+                }
+            else: # pongo else para mejorar la legibilidad
+                self.action_expert.add_new_instructions(subtask, instruction_list)
+                self.reflection_expert.save_instruction_list(subtask, instruction_list)
+                return {
+                "done": False,
+                }
+
+        
+
+
+
+        def action_expert(state: State):
+            if state.get("done", False):
+                return {"osworld_action": "done"}
+
+            osworld_action = self.action_expert.predict(self.SOM())
+
+            if osworld_action.startswith("error:"):
+                return {"execution_error": osworld_action,
+                        "osworld_action": None, 
+                        "new_instruction_list": False}
+            
+            return {"osworld_action": osworld_action, 
+                    "new_instruction_list": False}
+        
+        def action_router(state: State):
+            condition = not state.get("done", False) and (state.get("instruction_list_finished", False) or state.get("execution_error", ""))
+            if condition: # "" en python es falsy y cualquier otro string será true
+                return {"next": "reflection_expert"}
+            
+            return {"next": "end"} # para que el predict devuelva la acción y se pueda volver a llamar al predict después.
+        
+
+
+        def reflection_expert(state: State):
+            
+            if state.get("error_expert_feedback", None) is None:
+                info_for_error_expert, reflection_expert_feedback = self.reflection_expert.predict(
+                    state.get("execution_error", ""), # si no hay execution error es que simplemente ha acabado su lista
+                    state.get("action_expert_feedback", ""), # las instruction list ya las ha guardado el planning cuando crea nuevas
+                    self.SOM) 
+                
+
+                if info_for_error_expert is not None:
+                    return {"info_for_error_expert": info_for_error_expert}
+            else:
+                # no le pasamos nada más porque ya lo tiene guardado en el historial del chat
+                reflection_expert_feedback = self.reflection_expert.predict_with_error_expert_feedback(state["error_expert_feedback"], self.SOM)
+            
+            return {"reflection_expert_feedback": reflection_expert_feedback} # si ya ha acabado correctamente este feedback dirá que ha acabado correctamente
+
+
+        def reflection_router(state: State):
+            if state.get("info_for_error_expert", None) is not None:
+                return {"next": "error_expert"}
+            return {"next": "planning_expert"}
+
+
+
+
+        def error_expert(state: State):
+            error_expert_feedback = self.error_expert.predict(state["info_for_error_expert"], self.SOM)
+                
+            return {"error_expert_feedback": error_expert_feedback,
+                    "info_for_error_expert": None} # lo dejamos en blanco para la siguiente vez
+        
+
+        # EDGES ----------------------------------------------------------
+
+        graph_builder.add_node("start_router", start_router)
+        graph_builder.add_node("planning_expert", planning_expert)
+        graph_builder.add_node("action_expert", action_expert)
+        graph_builder.add_node("action_router", action_router)
+        graph_builder.add_node("reflection_expert", reflection_expert)
+        graph_builder.add_node("reflection_router", reflection_router)
+        graph_builder.add_node("error_expert", error_expert)
+
+        graph_builder.add_edge(START, "start_router")
+        graph_builder.add_conditional_edges(
+            "start_router",
+            lambda state: state.get("next"),
+            {"planning_expert": "planning_expert", "action_expert": "action_expert"}
+        )
+        graph_builder.add_edge("planning_expert", "action_expert")
+        graph_builder.add_edge("action_expert", "action_router")
+        graph_builder.add_conditional_edges(
+            "action_router",
+            lambda state: state.get("next"),
+            {"reflection_expert": "reflection_expert", "action_expert": "action_expert", "end": END}
+        )
+        graph_builder.add_edge("reflection_expert", "reflection_router")
+        graph_builder.add_conditional_edges(
+            "reflection_router",
+            lambda state: state.get("next"),
+            {"planning_expert": "planning_expert", "error_expert": "error_expert"}
+        )
+        graph_builder.add_edge("error_expert", "reflection_expert")
+
+        # COMPILE ---------------------------------------------------
+
+        self.graph = graph_builder.compile()
+
+
+
+
 
     def process_observation(self, obs: Dict) -> Image.Image:
         """
@@ -66,108 +231,60 @@ class BarryAgent:
             logger.error(f"Error al procesar el screenshot: {e}")
             raise
 
-    def parse_gemini_response(self, response_text: str) -> Tuple[str, List[str]]:
-        """
-        Parsea la respuesta de Gemini para extraer el estado y las acciones.
-        """
-        response_text = response_text.strip()
-        
-        # Verificar si es una respuesta de estado especial
-        if "finished" in response_text.lower() or "done" in response_text.lower():
-            return "Task completed", ["DONE"]
-        
-        if "wait" in response_text.lower():
-            return "Waiting for system response", ["WAIT"]
-        
-        if "error" in response_text.lower() or "fail" in response_text.lower():
-            return "Task failed", ["FAIL"]
-        
-        if "call_user" in response_text.lower():
-            if self.call_user_count < self.call_user_tolerance:
-                self.call_user_count += 1
-                return "Calling user for help", ["WAIT"]
-            else:
-                return "Too many user calls, failing", ["FAIL"]
-        
-        # Extraer acciones PyAutoGUI
-        actions = []
-        if response_text.startswith('"') and response_text.endswith('"'):
-            response_text = response_text[1:-1]
-        
-        # Dividir por punto y coma para obtener acciones individuales
-        action_parts = [action.strip() for action in response_text.split(';') if action.strip()]
-        
-        if not action_parts:
-            return "No valid actions found", ["FAIL"]
-        
-        actions = action_parts
-        logger.info(f"Acciones parseadas: {actions}")
-        return response_text, actions
 
     def predict(self, instruction: str, obs: Dict) -> Tuple[str, List[str]]:
         """
         Envía la captura de pantalla y la instrucción a Gemini para generar acciones pyautogui.
         Retorna una tupla con la respuesta de Gemini y la lista de acciones con estados apropiados.
         """
-        # Incrementar contador de trayectoria
         self.trajectory_length += 1
         
-        # Verificar si excedemos la longitud máxima de trayectoria
         if self.trajectory_length > self.max_trajectory_length:
             logger.warning(f"Trayectoria excede el límite máximo de {self.max_trajectory_length} pasos")
             return "Maximum trajectory length exceeded", ["FAIL"]
         
         try:
-            # Procesar la observación para obtener la imagen
-            image = self.process_observation(obs)
+            self.SOM = self.process_observation(obs)
+            
+            # Si es la primera iteración copiamos la tarea y la añadimos al historial
+            if self.first_iteration:
+                self.main_task = instruction
+                # Inicializa el estado del grafo con la tarea principal si es la primera vez
+                # LangGraph se encargará de inicializar instruction_list en planning_expert
+                self.graph_state = State = {
+                    "intruction_list": [],
+                    "current_instruction": 0, # Se incrementará a 1 en planning_expert o action_expert
+                    "execution_error": False,
+                    "info_for_error_expert": None,
+                    "errors_and_solutions": [],
+                    "instruction_list_finished": False,
+                    "end": False,
+                    "osworld_action": None # Inicializa la acción como None
+                }
+            
+            # si no es la primera iteración ya tienes el grafo guardado de antes
 
-            # Construir el prompt mejorado
-            prompt = f"""
-            Instrucción: {instruction}
-            
-            Basado en la captura de pantalla proporcionada, analiza la situación y determina qué hacer.
-            
-            Tienes las siguientes opciones:
-            1. Si la tarea está completada, responde con "finished"
-            2. Si necesitas esperar a que el sistema responda, responde con "wait"
-            3. Si hay un error y no puedes continuar, responde con "error"
-            4. Si necesitas ayuda del usuario, responde con "call_user"
-            5. Si puedes continuar con la tarea, proporciona acciones PyAutoGUI
-            
-            Para las acciones PyAutoGUI, proporciona solo las acciones en una sola línea, separadas por punto y coma.
-            Incluye time.sleep() apropiados entre acciones para dar tiempo al sistema.
-            
-            Ejemplos de acciones:
-            - Abrir terminal: pyautogui.hotkey('ctrl', 'alt', 't');time.sleep(2)
-            - Escribir comando: pyautogui.typewrite('ls');pyautogui.press('enter');time.sleep(1)
-            - Hacer clic: pyautogui.click(x, y);time.sleep(0.5)
-            - Copiar archivo: pyautogui.hotkey('ctrl', 'c');time.sleep(0.5);pyautogui.hotkey('ctrl', 'v')
-            
-            Recuerda:
-            - Para rutas de directorio usa ./directorio
-            - Siempre incluye time.sleep() entre acciones
-            - No incluyas importaciones ni explicaciones
-            - Si no estás seguro, es mejor responder "wait" que fallar
-            - No pongas la respuesta entre comillas
-            
-            Respuesta:
-            """
+            final_state = self.graph.invoke(self.graph_state)
+            self.graph_state = final_state
+            osworld_action_to_return = final_state.get("osworld_action")
+            is_done = final_state.get("done", False)
 
-            # Enviar la solicitud a Gemini
-            response = self.model.generate_content([prompt, image])
-            response_text = response.text.strip()
-            
-            # Parsear la respuesta
-            parsed_response, actions = self.parse_gemini_response(response_text)
-            
-            logger.info(f"Respuesta de Gemini: {parsed_response}")
-            logger.info(f"Acciones generadas: {actions}")
-            
-            return parsed_response, actions
+            if is_done and osworld_action_to_return == "done": # doble comprobación aun que con una ya sería suficiente
+                logger.info("BarryAgent: Tarea finalizada con éxito.")
+                return "se acabo lo que se daba", ["DONE"]
+
+            if osworld_action_to_return:
+                logger.info(f"BarryAgent: Acción decidida por el agente: '{osworld_action_to_return}'")
+                return "esta es la siguiente acción", [osworld_action_to_return]
+            else:
+                logger.warning("BarryAgent: El grafo no produjo una acción de OSWorld válida en esta iteración.")
+                return "FAIL: No OSWorld action generated in this cycle.", ["FAIL"]
+
             
         except Exception as e:
             logger.error(f"Error al procesar la solicitud a Gemini: {e}")
             return f"Error: {e}", ["FAIL"]
+
 
     def reset(self, runtime_logger):
         """
@@ -175,30 +292,9 @@ class BarryAgent:
         """
         self.trajectory_length = 0
         self.call_user_count = 0
+        self.first_iteration = True
         logger.info("Agente reiniciado")
 
-    def get_action_space(self) -> str:
-        """
-        Retorna el espacio de acciones soportado por el agente.
-        """
-        return """
-        Acciones PyAutoGUI soportadas:
-        - pyautogui.click(x, y) - Hacer clic en coordenadas
-        - pyautogui.doubleClick(x, y) - Doble clic
-        - pyautogui.rightClick(x, y) - Clic derecho
-        - pyautogui.drag(x1, y1, x2, y2) - Arrastrar
-        - pyautogui.typewrite('texto') - Escribir texto
-        - pyautogui.press('tecla') - Presionar tecla
-        - pyautogui.hotkey('ctrl', 'c') - Combinación de teclas
-        - pyautogui.scroll(clicks) - Desplazarse
-        - time.sleep(seconds) - Esperar
-        
-        Estados especiales:
-        - finished: Tarea completada
-        - wait: Esperar respuesta del sistema
-        - error: Error, no se puede continuar
-        - call_user: Solicitar ayuda del usuario
-        """
 
 
 if __name__ == "__main__":
@@ -221,7 +317,7 @@ if __name__ == "__main__":
         }
         
         print("Agente inicializado correctamente")
-        print(f"Espacio de acciones:\n{agent.get_action_space()}")
+        
         
         # Para probar realmente, necesitarías cargar un screenshot real
         # response, actions = agent.predict(test_instruction, test_obs)
