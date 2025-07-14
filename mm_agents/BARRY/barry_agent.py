@@ -15,6 +15,16 @@ from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+logging.basicConfig(
+    level=logging.INFO,  # Set the minimum level for logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Output to console
+        # logging.FileHandler("app.log") # Uncomment to also log to a file
+    ]
+)
+
+# Now, get the logger for this module
 logger = logging.getLogger("desktopenv.agent")
 
 class BarryAgent:

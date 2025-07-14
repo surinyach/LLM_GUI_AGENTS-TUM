@@ -70,6 +70,7 @@ class ActionExpert:
 
 
     def add_new_instructions(self, subtask, new_instructions):
+        logger.info("añadiendo nuevas instrucciones en el action expert")
         try:
             initial_history = [
                 {"role": "user", "parts": [{"text": self.system_instruction}]}, 
@@ -83,10 +84,14 @@ class ActionExpert:
             raise
         
 
-    def predict(self, SOM):       
+    def predict(self, SOM):    
+        logger.info("predict del action expert")
+
         try:
             response = self.chat.send_message([SOM])
+            logger.info(f"respuesta del predict del action expert: {response.text}")
             return response.text
+        
         
         except Exception as e:
             logger.error(f"Error en la función predict() del action_expert: {e}")

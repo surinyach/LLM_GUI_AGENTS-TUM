@@ -8,3 +8,8 @@ puedes elegir la tarea en la carpeta evaluation_examples/examples
 
 --domain <aquí pones la sub carpeta de la cual hayas elegido la tarea>
 --task <aquí pones el id de la tarea>
+
+otros modelos de gemini:
+
+gemini-2.5-flash-lite-preview-06-17
+gemini-2.5-flash

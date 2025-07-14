@@ -26,6 +26,9 @@ class PlanningExpert:
         self.instruction_list = ""
         self.subtask_list = ""
         self.current_subtask = 0
+
+        self.first_iter = True
+
     
     def parse_subtask_response(self, response_text: str) -> List[str]:
         """
@@ -40,16 +43,18 @@ class PlanningExpert:
         return subtasks
     
     def save_main_task(self, main_task):
-        print("planning expert guarda y descompone main task")
+        logger.info("planning expert guarda y descompone main task")
 
         try:
             self.main_task = main_task
             prompt = f"This is the main task, decompose it into subtasks, separating each subtask by a semicolon ';': {main_task}"
             response = self.chat.send_message(prompt)
             self.subtask_list = self.parse_subtask_response(response.text)
+            logger.info(f"estas son las subtareas que ha creado {response.text}")
 
-            self.current_subtask = 1
-            return self.subtask_list[1]
+
+            self.current_subtask = 0
+            return self.subtask_list[0]
         
         except Exception as e:
             logger.error(f"Error en la función save_main_task() del planning_expert: {e}")
@@ -59,7 +64,7 @@ class PlanningExpert:
         try:
             prompt = f"Decide if the subtask: {self.subtask_list[self.current_subtask]} is finished according to this feedback {reflection_expert_feedback}. Respond only with a 'yes' or 'no' don't add any more comments"
             response = self.chat.send_message(prompt)
-            print(f"decisión de si la tarea ha acabado: {response.text}")
+            logger.info(f"decisión de si la tarea ha acabado: {response.text}")
 
             return response.text.strip() == "yes"
 
@@ -68,10 +73,13 @@ class PlanningExpert:
             raise
     
     def rethink_instruction_list(self, action_expert_feedback, SOM):
+        logger.info(" toca repensar la lista de instrucciones")
         try:
             prompt = f"""This is what i did: {action_expert_feedback} take also into account the feedback mentioned in the previous message. 
             Taking this into account and the state of my screen right now can you rethink this subtask?: {self.subtask_list[self.current_subtask]}"""
             response = self.chat.send_message([prompt, SOM])
+            logger.info(f"esta es la nueva lista de instrucciones: {response.text}\n")
+
             return response.text
         
         except Exception as e:
@@ -79,11 +87,13 @@ class PlanningExpert:
             raise
 
     def rethink_subtask_list(self, action_expert_feedback, SOM):
+        logger.info("toca repensar la lista de subtareas")
         try:
             prompt = f"""Now that i finished the subtask lets rethink the REST of subtasks. This is what i did: {action_expert_feedback} and take also into account the feedback mentioned in the previous message.
             Taking this into account can you rethink the rest this subtask? Don't edit the task that are already done. Give me this response separating each subtask by a semicolon ';'.
             Remember this is the main task: {self.main_task}"""
             response = self.chat.send_message([prompt, SOM])
+            logger.info(f"Esta es la nueva lista de subtareas: {response.text}\n")
             self.subtask_list = self.parse_subtask_response(response.text)
 
         
@@ -92,9 +102,11 @@ class PlanningExpert:
             raise
     
     def think_instruction_list(self, SOM):
+        logger.info("descomponiendo la subtarea en instrucciones")
         try:
             prompt = f"think about the instructions to acomplish this task: {self.subtask_list[self.current_subtask]}"
             response = self.chat.send_message([prompt, SOM])
+            logger.info(f"estas son las instrucciones que ha creado {response.text}")
             return response.text
         
         except Exception as e:
@@ -112,9 +124,12 @@ class PlanningExpert:
             instruction_list = self.rethink_instruction_list(action_expert_feedback, SOM)
             return self.subtask_list[self.current_subtask], instruction_list
         
-        # si se ha terminado toca repensar el resto de subtareas
-        self.rethink_subtask_list(action_expert_feedback, SOM) 
-        self.current_subtask += 1
+        if not self.first_iter:
+            # si se ha terminado toca repensar el resto de subtareas
+            self.rethink_subtask_list(action_expert_feedback, SOM)
+            self.current_subtask += 1
+            self.first_iter = False
+
         # en el caso de que haya acabado todas las subtareas no modificará la task list 
         # y por lo tanto current_subtask coincidirá con len(self.subtask_list)
         if len(self.subtask_list) == self.current_subtask:
