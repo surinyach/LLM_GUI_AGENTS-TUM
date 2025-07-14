@@ -40,7 +40,7 @@ class PlanningExpert:
         return subtasks
     
     def save_main_task(self, main_task):
-        logger.info("planning expert guarda y descompone main task")
+        print("planning expert guarda y descompone main task")
 
         try:
             self.main_task = main_task
@@ -59,7 +59,7 @@ class PlanningExpert:
         try:
             prompt = f"Decide if the subtask: {self.subtask_list[self.current_subtask]} is finished according to this feedback {reflection_expert_feedback}. Respond only with a 'yes' or 'no' don't add any more comments"
             response = self.chat.send_message(prompt)
-            logger.info(f"decisión de si la tarea ha acabado: {response}")
+            print(f"decisión de si la tarea ha acabado: {response.text}")
 
             return response.text.strip() == "yes"
 
@@ -72,7 +72,7 @@ class PlanningExpert:
             prompt = f"""This is what i did: {action_expert_feedback} take also into account the feedback mentioned in the previous message. 
             Taking this into account and the state of my screen right now can you rethink this subtask?: {self.subtask_list[self.current_subtask]}"""
             response = self.chat.send_message([prompt, SOM])
-            return response
+            return response.text
         
         except Exception as e:
             logger.error(f"Error en la función rethink_instruction_list() del planning_expert: {e}")
@@ -95,7 +95,7 @@ class PlanningExpert:
         try:
             prompt = f"think about the instructions to acomplish this task: {self.subtask_list[self.current_subtask]}"
             response = self.chat.send_message([prompt, SOM])
-            return response
+            return response.text
         
         except Exception as e:
             logger.error(f"Error en la función think_instruction_list() del planning_expert: {e}")

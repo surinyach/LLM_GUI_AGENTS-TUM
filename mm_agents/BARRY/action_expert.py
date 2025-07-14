@@ -85,8 +85,8 @@ class ActionExpert:
 
     def predict(self, SOM):       
         try:
-            action = self.chat.send_message([SOM])
-            return action
+            response = self.chat.send_message([SOM])
+            return response.text
         
         except Exception as e:
             logger.error(f"Error en la función predict() del action_expert: {e}")

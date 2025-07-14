@@ -43,7 +43,7 @@ class ReflectionExpert:
             prompt = f"""This is what my error expert friend told me {error_exepert_feedback}. 
             With this give me feedback on how to solve the errors. I also pass you a screenshot of my screen right now"""
             response = self.chat.send_message([prompt, SOM])
-            return response
+            return response.text
         
         except Exception as e:
             logger.error(f"Error en la función predict_with_error_expert_feedback() del reflection_expert: {e}")
@@ -60,9 +60,9 @@ class ReflectionExpert:
                 I also pass you a set-of-mark of my screen"""
                 response = self.chat.send_message([prompt, SOM])
 
-                if response.startsWith("call_error_expert"):
-                    return response, None
-                return None, response
+                if response.text.startsWith("call_error_expert"):
+                    return response.text, None
+                return None, response.text
                 # error_expert, reflection_expert_feedback
 
             # esto es cuando ha acabado su lista correctamente
@@ -70,7 +70,7 @@ class ReflectionExpert:
 
             prompt = f"I finished the task, can you tell me if I finished it properly? this is what i did {action_expert_feedback}"
             response = self.chat.send_message(prompt)
-            return None, response
+            return None, response.text
             # error_expert, reflection_expert_feedback
         
         except Exception as e:

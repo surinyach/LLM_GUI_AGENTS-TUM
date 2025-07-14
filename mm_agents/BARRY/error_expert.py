@@ -27,7 +27,7 @@ class ErrorExpert:
         try:
             prompt = f"You are an error expert. Help me solve this problem: {info_for_error_expert}"
             response = self.model.generate_content([prompt, SOM])
-            return response
+            return response.text
         
         except Exception as e:
             logger.error(f"Error en la función predict() del error_expert: {e}")
