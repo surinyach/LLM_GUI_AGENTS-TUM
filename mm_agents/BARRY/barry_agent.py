@@ -189,7 +189,7 @@ class BarryAgent:
         graph_builder.add_conditional_edges(
             "action_router",
             lambda state: state.get("next"),
-            {"reflection_expert": "reflection_expert", "action_expert": "action_expert", "end": END}
+            {"reflection_expert": "reflection_expert", "end": END}
         )
         graph_builder.add_edge("reflection_expert", "reflection_router")
         graph_builder.add_conditional_edges(
@@ -237,6 +237,7 @@ class BarryAgent:
         Envía la captura de pantalla y la instrucción a Gemini para generar acciones pyautogui.
         Retorna una tupla con la respuesta de Gemini y la lista de acciones con estados apropiados.
         """
+        logger.info("Predict de barry agent")
         self.trajectory_length += 1
         
         if self.trajectory_length > self.max_trajectory_length:
@@ -252,14 +253,14 @@ class BarryAgent:
                 # Inicializa el estado del grafo con la tarea principal si es la primera vez
                 # LangGraph se encargará de inicializar instruction_list en planning_expert
                 self.graph_state = State = {
-                    "intruction_list": [],
-                    "current_instruction": 0, # Se incrementará a 1 en planning_expert o action_expert
-                    "execution_error": False,
-                    "info_for_error_expert": None,
-                    "errors_and_solutions": [],
-                    "instruction_list_finished": False,
-                    "end": False,
-                    "osworld_action": None # Inicializa la acción como None
+                    "action_expert_feedback": "",
+                    "reflection_expert_feedback": "",
+                    "info_for_error_expert": "",
+                    "error_expert_feedback": "",
+                    "new_instruction_list": True,
+
+                    "done": False,
+                    "osworld_action": "",
                 }
             
             # si no es la primera iteración ya tienes el grafo guardado de antes

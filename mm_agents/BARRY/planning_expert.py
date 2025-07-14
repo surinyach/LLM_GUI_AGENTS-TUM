@@ -40,6 +40,8 @@ class PlanningExpert:
         return subtasks
     
     def save_main_task(self, main_task):
+        logger.info("planning expert guarda y descompone main task")
+
         try:
             self.main_task = main_task
             prompt = f"This is the main task, decompose it into subtasks, separating each subtask by a semicolon ';': {main_task}"
@@ -57,6 +59,8 @@ class PlanningExpert:
         try:
             prompt = f"Decide if the subtask: {self.subtask_list[self.current_subtask]} is finished according to this feedback {reflection_expert_feedback}. Respond only with a 'yes' or 'no' don't add any more comments"
             response = self.chat.send_message(prompt)
+            logger.info(f"decisión de si la tarea ha acabado: {response}")
+
             return response.text.strip() == "yes"
 
         except Exception as e:
