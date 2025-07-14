@@ -10,7 +10,6 @@ from .planning_expert import PlanningExpert
 from .reflection_expert import ReflectionExpert
 from .error_expert import ErrorExpert
 
-from dotenv import load_dotenv
 from typing import Annotated, Literal
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
@@ -83,6 +82,8 @@ class BarryAgent:
         # NODES -----------------------------------------------
 
         def start_router(state: State):
+            logger.info("estoy en el start_router")
+
             if self.first_iteration:
                 return {"next": "planning_expert"}
             return {"next": "action_expert"}
@@ -116,7 +117,7 @@ class BarryAgent:
             if state.get("done", False):
                 return {"osworld_action": "done"}
 
-            osworld_action = self.action_expert.predict(self.SOM())
+            osworld_action = self.action_expert.predict(self.SOM)
 
             if osworld_action.startswith("error:"):
                 return {"execution_error": osworld_action,
@@ -127,7 +128,7 @@ class BarryAgent:
                     "new_instruction_list": False}
         
         def action_router(state: State):
-            condition = not state.get("done", False) and (state.get("instruction_list_finished", False) or state.get("execution_error", ""))
+            condition = not state.get("done", False) and state.get("execution_error", "")
             if condition: # "" en python es falsy y cualquier otro string será true
                 return {"next": "reflection_expert"}
             
@@ -252,7 +253,7 @@ class BarryAgent:
                 self.main_task = instruction
                 # Inicializa el estado del grafo con la tarea principal si es la primera vez
                 # LangGraph se encargará de inicializar instruction_list en planning_expert
-                self.graph_state = State = {
+                self.graph_state = {
                     "action_expert_feedback": "",
                     "reflection_expert_feedback": "",
                     "info_for_error_expert": "",
