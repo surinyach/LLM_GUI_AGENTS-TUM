@@ -221,9 +221,9 @@ class BarryAgent:
             case 2: Action expert finishes execution its instruction list without any execution error
             """
             # case 1
-            if state["osworld_action"].startswith("error:"):
+            if state["execution_error"]:
                 reflection_expert_feedback = self.reflection_expert.execution_error_reflection(
-                    state["osworld_action"],
+                    state["execution_error"],
                     state["action_expert_feedback"],
                     self.SOM_screenshot) 
                 
