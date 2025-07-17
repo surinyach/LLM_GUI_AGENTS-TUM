@@ -3,7 +3,7 @@ import logging
 from typing import List, Tuple
 from dotenv import load_dotenv
 import google.generativeai as genai
-from PIL import Image # Importar la librería Pillow
+from PIL import Image
 import re
 
 logger = logging.getLogger("planning_expert")
@@ -269,21 +269,6 @@ class PlanningExpert:
         
         self.last_printed_index = len(self.chat.history)
 
-        
-    
-    
-    " ESTO ES PARA USARLO EN EL REFLECTION !!!"
-    # def decide_if_task_finished(self, reflection_expert_feedback):
-    #     try:
-    #         prompt = f"Decide if the subtask: {self.subtask_list[self.current_subtask_index]} is finished according to this feedback {reflection_expert_feedback}. Respond only with a 'yes' or 'no' don't add any more comments"
-    #         response = self.chat.send_message(prompt)
-    #         logger.info(f"decisión de si la tarea ha acabado: {response.text}")
-
-    #         return response.text.strip() == "yes"
-
-    #     except Exception as e:
-    #         logger.error(f"Error en la función decide_if_task_finished() del planning_expert: {e}")
-    #         raise
     
 
 if __name__ == "__main__":
