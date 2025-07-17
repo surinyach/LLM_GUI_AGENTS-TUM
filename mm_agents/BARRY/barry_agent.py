@@ -55,7 +55,7 @@ class BarryAgent:
         
 
         # PERCEPTION SYSTEM
-        self.SOM = ""
+        self.SOM_screenshot = ""
         
 
         self.main_task = ""
@@ -102,33 +102,58 @@ class BarryAgent:
             return {"next": "action_expert"}
         
         def planning_expert(state: State):
+            """
+                case 1: This case only happens in the firs iteration:
+                    In this case the main task is saved and decomposed in the planning expert.
+                    The main task is decomposed in a list of strings. Each string is a subtask.
+                    Then the planning expert returns the current subtask.
+
+                case 2: Action experts finish the instruction_list and reflection_expert says it is correct:
+                    First we ask the planning expert if this was the last task.
+                    If it was the last done = true is returned.
+                    If it wasn't the last task it tells the planning expert to rethink the rest of the subtask.
+                    Rethinking the subtask list implies to delete the subtasks already made and generate a list that 
+                    STRATS with the ones that are still needed to be done.
+                    The planning expert returns the inmediate first task of the new subtask list.
+
+                case 3: There is an error. Either execution error during the instruction list or because refelction expert don't think it is finished:
+                    It only calls the function rethink_subtask_list() but with the reflection_expert_feedback and the action_expert_feedback.
+                    It is the same function as the case 2. The planning expert creates a new subtask list and returns the first subtask.
+
+                Common actions:
+                In the past cases the planning expert always returns a subtask. So after every case this task must be decomposed into
+                an instruction list. When we have the current subtask and instruction list we call the action expert and reflection expert
+                to save the subtask and instruction list.
+                
+            """
+            # case 1
             if self.first_iteration:
                 logger.info("nodo planning expert: primera iteración")
-                self.planning_expert.save_main_task(self.main_task)
+                subtask = self.planning_expert.decompose_main_task(self.main_task, self.SOM_screenshot)
                 self.first_iteration = False
+
+            # case 2
+            elif state["reflection_expert_feedback"] == "":
+                done = self.planning_expert.is_last_task(self.SOM_screenshot)
+                if done:
+                    return {"done": True}
+                else:
+                   subtask = self.planning_expert.rethink_subtask_list("", state["action_expert_feedback"], self.SOM_screenshot)
+                   
+            # case 3
+            else:
+                subtask = self.planning_expert.rethink_subtask_list(state["reflection_expert_feedback"], state["action_expert_feedback"], self.SOM_screenshot)
+
+            # This has to be done after every case:
+            instruction_list = self.planning_expert.decompose_subtask()
+
+            self.action_expert.set_subtask_and_instructions(subtask, instruction_list)
+            self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
+
             
-            logger.info("nodo planning expert: llamando al predict de planning expert")
-            subtask, instruction_list  = self.planning_expert.predict(
-                state.get("action_expert_feedback",""),
-                state.get("reflection_expert_feedback",""), 
-                self.SOM)
-            logger.info(f"nodo planning expert: respuesta del predict de planning expert: subtask:{subtask} , instruction_list: {instruction_list} ")
-
-            if instruction_list == "done": # significa que ya no hay nada más que hacer
-                return {
-                "done": True,
-                }
-            else: # pongo else para mejorar la legibilidad
-                self.action_expert.add_new_instructions(subtask, instruction_list)
-                self.reflection_expert.save_instruction_list(subtask, instruction_list)
-                return {
-                "done": False,
-                }
-
-        
-
-
-
+            
+            
+            
         def action_expert(state: State):
             if state.get("done", False):
                 return {"osworld_action": "done"}
@@ -141,6 +166,10 @@ class BarryAgent:
                 return {"execution_error": osworld_action,
                         "osworld_action": None, 
                         "new_instruction_list": False}
+            
+            if osworld_action == 'finish':
+                return {"done": True}
+
             
             return {"osworld_action": osworld_action, 
                     "new_instruction_list": False}
