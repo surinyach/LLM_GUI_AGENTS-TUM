@@ -8,7 +8,7 @@ from io import BytesIO
 from .action_expert import ActionExpert
 from .planning_expert import PlanningExpert
 from .reflection_expert import ReflectionExpert
-from .error_expert import ErrorExpert
+from .perception_expert import PerceptionExpert
 
 from typing import Annotated, Literal
 from langgraph.graph import StateGraph, START, END
@@ -53,38 +53,31 @@ class BarryAgent:
         self.call_user_count = 0
         self.call_user_tolerance = 3
         
-
-        # PERCEPTION SYSTEM
-        self.SOM_screenshot = ""
-        
-
         self.main_task = ""
         self.first_iteration = True
 
         self.action_expert = ActionExpert() 
         self.planning_expert = PlanningExpert()
         self.reflection_expert = ReflectionExpert()
+        self.perception_expert = PerceptionExpert()
         
         self.graph = None
         self.graph_state = {} 
 
-        
+        # SOM screenshot and description
+        self.SOM_screenshot = ""
+        self.SOM_description = ""
 
         # LANG GRAPH
 
         # STATE --------------------------------------------------------------------
 
         class State(TypedDict):
-            #intruction_list: str    # no hace falta guardarla porque se la pasa directamente cuando las crea
             action_expert_feedback: str
             reflection_expert_feedback: str
-            info_for_error_expert: str
-            error_expert_feedback: str
-            new_instruction_list: bool
-            execution_error:bool
+            execution_error:str
             finished_instructions:bool
 
-            done: bool
             osworld_action: str
         
 
@@ -151,10 +144,6 @@ class BarryAgent:
             self.action_expert.set_subtask_and_instructions(subtask, instruction_list)
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
 
-            
-            
-            
-            
         def action_expert(state: State):
             """
             Action expert case definition:
@@ -176,20 +165,20 @@ class BarryAgent:
 
             state["execution_error"] = ""
 
-            # Process the current instruction from the instruction list
-            action = action_expert.process_instruction()
-            
             # Case 1
-            if (action_expert.get_instruction_list() == "done"):
+            if (self.action_expert.get_instruction_list() == "done"):
                 logger.info("Primer caso del Barry Action Expert: Done")
                 return {"osworld_action": "done"}
+
+            # Process the current instruction from the instruction list
+            action = self.action_expert.process_instruction(self.SOM_screenshot, self.SOM_description)
             
             # Case 2
             if (action == "finish"):
                 logger.info("Segundo caso del Barry Action Expert: Se han terminado las instrucciones, finish")
                 return {
                     "finished_instructions": True,
-                    "action_expert_feedback": action_expert.summarize_done_instructions()
+                    "action_expert_feedback": self.action_expert.summarize_done_instructions()
                 }
 
             # Case 3
@@ -197,7 +186,7 @@ class BarryAgent:
                 logger.info("Tercer caso del Barry Action Expert: Se ha producido un error tratando de resolver la tarea")
                 return {
                     "execution_error": action.split("error:", 1)[-1],
-                    "action_expert_feedback": action_expert.summarize_done_instructions()
+                    "action_expert_feedback": self.action_expert.summarize_done_instructions()
                 }
         
             # Case 4
@@ -206,14 +195,12 @@ class BarryAgent:
             }
         
         def action_router(state: State):
-            condition = not state.get("done", False) and state.get("execution_error", "")
-            if condition: # "" en python es falsy y cualquier otro string será true
+            condition = state["osworld_action"] == "finish" or state["execution_error"]
+            if condition: 
                 return {"next": "reflection_expert"}
             
-            return {"next": "end"} # para que el predict devuelva la acción y se pueda volver a llamar al predict después.
+            return {"next": "end"}
         
-
-
         def reflection_expert(state: State):
             """
             case 1: Action expert has an execution error during the execution of the instruction list
@@ -266,35 +253,29 @@ class BarryAgent:
 
         self.graph = graph_builder.compile()
 
-    def process_observation(self, obs: Dict) -> Image.Image:
+    def _process_new_screenshot(self, obs:dict):
         """
-        Procesa la captura de pantalla del entorno para convertirla a una imagen PIL compatible con Gemini.
+        Processes the new screenshot of the OSWorld environment through the Perception System.
+        Generates the SOM of the screenshot and a description of its components.
+        Stores the results in the self.SOM_screenshot and self.SOM_description local variables.
         """
-        if self.observation_type not in ["screenshot", "screenshot_a11y_tree"]:
-            logger.error(f"observation_type debe ser 'screenshot' o 'screenshot_a11y_tree', recibido: {self.observation_type}")
-            raise ValueError(f"observation_type no soportado: {self.observation_type}")
+        if self.observation_type not in ["screenshot"]:
+            raise ValueError(f"observation_type not supported: {self.observation_type}")
 
         if "screenshot" not in obs:
-            logger.error("No se encontró 'screenshot' en la observación")
-            raise ValueError("No se encontró 'screenshot' en la observación")
+            raise ValueError("'screenshot' was not found in the recieved observation")
+        
+        self.perception_expert.store_screenshot(obs["screenshot"])
+        self.perception_expert.process_screenshot()
 
-        try:
-            screenshot = obs["screenshot"]
-            # Manejar si screenshot es str
-            if isinstance(screenshot, str):
-                screenshot = screenshot.encode('utf-8')
-            # Convertir a imagen PIL
-            image = Image.open(BytesIO(screenshot))
-            return image
-        except Exception as e:
-            logger.error(f"Error al procesar el screenshot: {e}")
-            raise
-
+        # Store the results in the local variables
+        self.SOM_screenshot = self.perception_expert.get_som_screenshot()
+        self.SOM_description = self.perception_expert.get_som_description()
+    
 
     def predict(self, instruction: str, obs: Dict) -> Tuple[str, List[str]]:
         """
-        Envía la captura de pantalla y la instrucción a Gemini para generar acciones pyautogui.
-        Retorna una tupla con la respuesta de Gemini y la lista de acciones con estados apropiados.
+        Sends the screenshot and the instruction to the Agent in order to generate pyautogui actions.
         """
         logger.info("Predict de barry agent")
         self.trajectory_length += 1
@@ -304,7 +285,8 @@ class BarryAgent:
             return "Maximum trajectory length exceeded", ["FAIL"]
         
         try:
-            self.SOM = self.process_observation(obs)
+            # Process the new screenshot and store it in the Perception Expert
+            self._process_new_screenshot(obs)
             
             # Si es la primera iteración copiamos la tarea y la añadimos al historial
             if self.first_iteration:
@@ -316,7 +298,6 @@ class BarryAgent:
                     "reflection_expert_feedback": "",
                     "info_for_error_expert": "",
                     "error_expert_feedback": "",
-                    "new_instruction_list": True,
 
                     "done": False,
                     "osworld_action": "",
