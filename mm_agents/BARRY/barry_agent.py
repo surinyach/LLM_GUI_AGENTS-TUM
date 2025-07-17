@@ -64,7 +64,6 @@ class BarryAgent:
         self.action_expert = ActionExpert() 
         self.planning_expert = PlanningExpert()
         self.reflection_expert = ReflectionExpert()
-        self.error_expert = ErrorExpert()
         
         self.graph = None
         self.graph_state = {} 
@@ -82,6 +81,8 @@ class BarryAgent:
             info_for_error_expert: str
             error_expert_feedback: str
             new_instruction_list: bool
+            execution_error:bool
+            finished_instructions:bool
 
             done: bool
             osworld_action: str
@@ -96,8 +97,8 @@ class BarryAgent:
 
             if self.first_iteration:
                 logger.info("me voy al planning expert")
-
                 return {"next": "planning_expert"}
+                
             logger.info("me voy al action expert")
             return {"next": "action_expert"}
         
@@ -155,24 +156,54 @@ class BarryAgent:
             
             
         def action_expert(state: State):
-            if state.get("done", False):
+            """
+            Action expert case definition:
+                1. Planning returns instruction list == done, meaning that the general task is fullfilled.
+                2. Previous iteration has finished the instruction list, informing consequently the action router.
+                3. An error has been produced trying to resolve the instruction.
+                4. Needs to keep executing instructions from the instruction list.
+
+            Args:
+                State: State of the graph containing the syncronised variables. 
+
+            Return:
+                1. state.osworld_action = done, notifying the benchmark the task is finished.
+                2. state.finished _instructions = True and state.action_expert_feedback = description of the actions done since now.
+                3. state.execution_error = response containing the error and its description and state.action_expert_feedack =
+                description of the actions done since now.
+                4. state.osworld_action = pyautogui code to be executed by the benchmark.
+            """
+
+            state["execution_error"] = ""
+
+            # Process the current instruction from the instruction list
+            action = action_expert.process_instruction()
+            
+            # Case 1
+            if (action_expert.get_instruction_list() == "done"):
+                logger.info("Primer caso del Barry Action Expert: Done")
                 return {"osworld_action": "done"}
-            logger.info("estoy en el nodo del action expert voy a llamar al predict")
-            osworld_action = self.action_expert.predict(self.SOM)
-            logger.info(f"estoy en el nodo del action expert respuesta del predict: {osworld_action}")
-
-            if osworld_action.startswith("error:"):
-                logger.info(f"estoy dentro del if error del nodo del action expert, este es el error que ha detectado: {osworld_action}")
-                return {"execution_error": osworld_action,
-                        "osworld_action": None, 
-                        "new_instruction_list": False}
             
-            if osworld_action == 'finish':
-                return {"done": True}
+            # Case 2
+            if (action == "finish"):
+                logger.info("Segundo caso del Barry Action Expert: Se han terminado las instrucciones, finish")
+                return {
+                    "finished_instructions": True,
+                    "action_expert_feedback": action_expert.summarize_done_instructions()
+                }
 
-            
-            return {"osworld_action": osworld_action, 
-                    "new_instruction_list": False}
+            # Case 3
+            if (action.startswith("error:")):
+                logger.info("Tercer caso del Barry Action Expert: Se ha producido un error tratando de resolver la tarea")
+                return {
+                    "execution_error": action.split("error:", 1)[-1],
+                    "action_expert_feedback": action_expert.summarize_done_instructions()
+                }
+        
+            # Case 4
+            return {
+                "osworld_action": action
+            }
         
         def action_router(state: State):
             condition = not state.get("done", False) and state.get("execution_error", "")
@@ -206,20 +237,6 @@ class BarryAgent:
             
             return {"reflection_expert_feedback": reflection_expert_feedback}
 
-
-        def reflection_router(state: State):
-            if state.get("info_for_error_expert", None) is not None:
-                return {"next": "error_expert"}
-            return {"next": "planning_expert"}
-
-
-
-
-        def error_expert(state: State):
-            error_expert_feedback = self.error_expert.predict(state["info_for_error_expert"], self.SOM)
-                
-            return {"error_expert_feedback": error_expert_feedback,
-                    "info_for_error_expert": None} # lo dejamos en blanco para la siguiente vez
         
 
         # EDGES ----------------------------------------------------------
@@ -229,8 +246,6 @@ class BarryAgent:
         graph_builder.add_node("action_expert", action_expert)
         graph_builder.add_node("action_router", action_router)
         graph_builder.add_node("reflection_expert", reflection_expert)
-        graph_builder.add_node("reflection_router", reflection_router)
-        graph_builder.add_node("error_expert", error_expert)
 
         graph_builder.add_edge(START, "start_router")
         graph_builder.add_conditional_edges(
@@ -245,21 +260,11 @@ class BarryAgent:
             lambda state: state.get("next"),
             {"reflection_expert": "reflection_expert", "end": END}
         )
-        graph_builder.add_edge("reflection_expert", "reflection_router")
-        graph_builder.add_conditional_edges(
-            "reflection_router",
-            lambda state: state.get("next"),
-            {"planning_expert": "planning_expert", "error_expert": "error_expert"}
-        )
-        graph_builder.add_edge("error_expert", "reflection_expert")
+        graph_builder.add_edge("reflection_expert", "planning_expert")
 
         # COMPILE ---------------------------------------------------
 
         self.graph = graph_builder.compile()
-
-
-
-
 
     def process_observation(self, obs: Dict) -> Image.Image:
         """
@@ -373,12 +378,7 @@ if __name__ == "__main__":
         
         print("Agente inicializado correctamente")
         
-        
-        # Para probar realmente, necesitarías cargar un screenshot real
-        # response, actions = agent.predict(test_instruction, test_obs)
-        # print(f"Respuesta: {response}")
-        # print(f"Acciones: {actions}")
-        
+    
     except Exception as e:
         print(f"Error en la prueba: {e}")
         print("Asegúrate de tener configurado GEMINI_API_KEY en tu archivo .env")
