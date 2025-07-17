@@ -76,9 +76,9 @@ class BarryAgent:
             action_expert_feedback: str
             reflection_expert_feedback: str
             execution_error:str
-            finished_instructions:bool
 
             osworld_action: str
+            done: bool
         
 
         graph_builder = StateGraph(State)
@@ -128,7 +128,7 @@ class BarryAgent:
 
             # case 2
             elif state["reflection_expert_feedback"] == "":
-                done = self.planning_expert.is_last_task(self.SOM_screenshot)
+                done = self.planning_expert.task_done(self.SOM_screenshot)
                 if done:
                     return {"done": True}
                 else:
@@ -139,7 +139,7 @@ class BarryAgent:
                 subtask = self.planning_expert.rethink_subtask_list(state["reflection_expert_feedback"], state["action_expert_feedback"], self.SOM_screenshot)
 
             # This has to be done after every case:
-            instruction_list = self.planning_expert.decompose_subtask()
+            instruction_list = self.planning_expert.decompose_subtask(self.SOM_screenshot)
 
             self.action_expert.set_subtask_and_instructions(subtask, instruction_list)
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
@@ -157,8 +157,8 @@ class BarryAgent:
 
             Return:
                 1. state.osworld_action = done, notifying the benchmark the task is finished.
-                2. state.finished _instructions = True and state.action_expert_feedback = description of the actions done since now.
-                3. state.execution_error = response containing the error and its description and state.action_expert_feedack =
+                2. state.action_expert_feedback = description of the actions done since now.
+                3. state.osworld_action = finish and state.execution_error = response containing the error and its description and state.action_expert_feedack =
                 description of the actions done since now.
                 4. state.osworld_action = pyautogui code to be executed by the benchmark.
             """
@@ -166,7 +166,7 @@ class BarryAgent:
             state["execution_error"] = ""
 
             # Case 1
-            if (self.action_expert.get_instruction_list() == "done"):
+            if (state["done"]):
                 logger.info("Primer caso del Barry Action Expert: Done")
                 return {"osworld_action": "done"}
 
@@ -177,8 +177,8 @@ class BarryAgent:
             if (action == "finish"):
                 logger.info("Segundo caso del Barry Action Expert: Se han terminado las instrucciones, finish")
                 return {
-                    "finished_instructions": True,
-                    "action_expert_feedback": self.action_expert.summarize_done_instructions()
+                    "osworld_action": action,
+                    "action_expert_feedback": self.action_expert.summarize_done_instructions(),
                 }
 
             # Case 3
@@ -296,8 +296,7 @@ class BarryAgent:
                 self.graph_state = {
                     "action_expert_feedback": "",
                     "reflection_expert_feedback": "",
-                    "info_for_error_expert": "",
-                    "error_expert_feedback": "",
+                    "execution_error": "",
 
                     "done": False,
                     "osworld_action": "",
