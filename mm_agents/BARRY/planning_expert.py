@@ -4,25 +4,47 @@ from typing import List, Tuple
 from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image # Importar la librería Pillow
+import re
 
 logger = logging.getLogger("planning_expert")
 
 DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE = """
-This is the main task: {main_task}, decompose it into subtasks. Don't do very fine grained subtask as later 
+This is the main task: "{main_task}"
+Decompose it into subtasks. Don't do very fine grained subtask as later 
 you will have to think about the instructions for each subtask. It is important that each subtask involves at least an action.
-For example a subtask can't be just to look for a google chrome icon. The subtask should be open browser. Then when you have to
-give the instructions for the subtask you can say click on the browser icon or type crome on the searching bar or something like that.
-Each subtask should be separated by a semicolon ';'.
+For example a subtask can't be just to look for a google chrome icon. The subtask should be "Open the browser". Then when you have to
+give the instructions for the SUBTASK you can say click on the browser icon or type crome on the searching bar or something like that.
+
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, think step-by-step about how to break down the main task. Consider the actions involved and ensure each subtask is actionable but not overly granular. Write down your thought process here.
+2.  **Final Subtasks:** After your reasoning, you MUST provide the final list of subtasks. This list MUST start with the exact phrase "SUBTASK_LIST:" on its own line, followed immediately by the subtasks.
+    All text from "SUBTASK_LIST:" until the end of your response will be considered the list of subtasks. Each subtask should be separated by a semicolon ';'.
+
+Example of how the subtask list should appear:
+SUBTASK_LIST: Open the browser; Search for "example" on Google; Do something; Finish task.
 """
 
 RETHINK_SUBTASK_PROMPT_TEMPLATE = """
-Rethink the subtask list. This might be due to an issue: {reflection_expert_feedback}
+Rethink the subtask list. This might be due to an issue: 
+
+{reflection_expert_feedback}
+
 or if there is no issue is because I've finished the current subtask: "{current_subtask}" and i want to know the rest of subtask that I have to do.
 This is what I did: 
+
 {action_expert_feedback}
+
 Take into account this feedback and my past actions/messages.
+I am also providing you with the current state of my screen.
+
 Now, provide a revised subtask list with what is still left to do to accomplish the main task: {main_task}.
-Please separate each subtask by a semicolon ';'. I am also providing you with the current state of my screen.
+
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. Think step-by-step about why the subtask list needs rethinking (if an issue was raised) or what the next logical steps are (if the current subtask is finished). Based on this, formulate the revised list of remaining subtasks. Write down your thought process here.
+2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of remaining subtasks. This list MUST start with the exact phrase "SUBTASK_LIST:" on its own line, followed immediately by the subtasks. All text from "SUBTASK_LIST:" until the end of your response will be considered the revised list of subtasks. Each subtask should be separated by a semicolon ';'.
+
+Example of how the revised subtask list should appear:
+SUBTASK_LIST: Select the "Images" tab; Choose a dog image; Download the image; Close the browser.
 """
 
 DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
@@ -73,21 +95,34 @@ class PlanningExpert:
 
     def _parse_subtask_response(self, response_text: str) -> List[str]:
         """
-        Parses the raw text response from the LLM into a list of subtasks.
-        Assumes tasks are separated by ';'.
+        Parses the raw text response from the LLM, by splitting on "SUBTASK_LIST:"
+        and taking the latter part. Assumes subtasks are separated by ';'.
 
-        Args: 
-            response_text (str): It is a string that ccontains a list of subtasks separated by a semicolon.
+        Args:
+            response_text (str): The full string response from the LLM.
 
-        Return:
-            List[str]: This is a list of each subtask
+        Returns:
+            List[str]: A list containing each parsed subtask.
+                       Returns an empty list if the marker is not found or no subtasks are present.
         """
         if not response_text:
             return []
-        
-        # Split by semicolon, strip whitespace, and filter out empty strings
-        subtasks = [task.strip() for task in response_text.split(';') if task.strip()]
+
+        marker = "SUBTASK_LIST:"
+
+        parts = response_text.split(marker, 1) # Use 1 to split only on the first occurrence
+
+        if len(parts) < 2:
+            print(f"Warning: Marker '{marker}' not found in the response.")
+            return []
+
+        # Grab the part after the marker and strip leading/trailing whitespace (including newlines)
+        subtasks_raw_string = parts[1].strip()
+
+        # Split by semicolon and clean each individual task.
+        subtasks = [task.strip() for task in subtasks_raw_string.split(';') if task.strip()]
         return subtasks
+
     
     
     def decompose_main_task(self, main_task, SOM):
@@ -230,7 +265,7 @@ class PlanningExpert:
         for i in range(self.last_printed_index, len(self.chat.history)):
             message = self.chat.history[i]
             text_content = message.parts[0].text 
-            print(f"{message.role}: {text_content}")
+            print(f"{message.role}: {{ \"{text_content}\" }}")
         
         self.last_printed_index = len(self.chat.history)
 
@@ -287,9 +322,9 @@ if __name__ == "__main__":
         subtask = planning_expert.rethink_subtask_list("", action_expert_feedback, SOM)
     
     instruction_list = planning_expert.decompose_subtask()
-    print("esta es la lista de instrucciones: " + instruction_list + "\n")
     
     planning_expert._print_history()
+
 
     print("caso 2.1 terminado -----------------------------------------------\n")
 
@@ -306,13 +341,14 @@ if __name__ == "__main__":
     It should press the image section and then download a photo.
     """
 
+    planning_expert._set_current_task_as_last()
+
     print("caso 3: Ha acabado la lista pero el reflection expert dice que no está bien acabada")
 
     subtask = planning_expert.rethink_subtask_list(reflection_expert_feedback, action_expert_feedback, SOM)
 
     planning_expert._print_history()
 
-    print("esta es la nueva subtarea:", subtask)
     print("caso 3 terminado -----------------------------------------------\n")
 
     # caso 2.2 --------------------------------
