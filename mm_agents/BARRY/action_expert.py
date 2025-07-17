@@ -55,16 +55,16 @@ Your response must be one of the following, and nothing else:
 
 ### Current Exection context
 
-- **Task**: 'task'
+- **Task**: {task}
 - **Instruction list**:
-  'instruction_list'
+{instruction_list}
 """
 
 ACTION_PROMPT="""
 ### Current Screen State
 
 - **New SOM description**:
-'SOM_description'
+{SOM_Description}
 
 Proceed to the next required action based on the task and instructions already provided, using both the attached image and this description of its elements.
 """
@@ -122,14 +122,17 @@ class ActionExpert:
         self.instruction_list = new_instruction_list
 
         # Reset the chat history providing the new initial context
-        initial_prompt = INITIAL_PROMPT.replace("'task'", subtask).replace("'instructio_list'", instruction_list)
+        initial_prompt = INITIAL_PROMPT.format(
+            task=new_subtask,
+            instruction_list=new_instruction_list
+        )
         initial_context = [
             {
                 "role": "user",
                 "parts": initial_prompt
             }
         ]
-        logger.info("Initial context of the Action Expert:" + initial_context)
+        logger.info(f"Initial context of the Action Expert: {initial_context}") 
         self.chat = self.model.start_chat(history=initial_context)
 
     def process_instruction(self, new_som_screenshot, new_som_description):
@@ -150,7 +153,9 @@ class ActionExpert:
         """
         try:
             logger.info("Process Instruction dentro del Action Expert")
-            prompt= ACTION_PROMPT.replace("'SOM_description'", new_som_description)
+            prompt= ACTION_PROMPT.format(
+                SOM_Description=new_som_description
+            )
             logger.info("Prompt enviado al LLM dentro del Action Expert: " + prompt)
             action = self.chat.send_message([prompt, new_som_screenshot])
             logger.info("Respuesta recibida por el LLM en el Action Expert: " + action.text)

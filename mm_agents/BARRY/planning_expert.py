@@ -54,6 +54,8 @@ DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
 Taking into account any feedback provided in previous interactions (if there was)
 and a summary of actions already performed (if described in previous messages),
 decompose the following specific subtask into a series of detailed steps or instructions.
+Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing instructions
+that consist on doing a screenshot, locating an element or recording coordinates.
 The answer should only contain the steps, don't add any comments.
 {current_subtask}.
 
