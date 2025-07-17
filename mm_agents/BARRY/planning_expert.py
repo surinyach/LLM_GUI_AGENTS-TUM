@@ -12,8 +12,11 @@ DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE = """
 This is the main task: "{main_task}"
 Decompose it into subtasks. Don't do very fine grained subtask as later 
 you will have to think about the instructions for each subtask. It is important that each subtask involves at least an action.
-For example a subtask can't be just to look for a google chrome icon. The subtask should be "Open the browser". Then when you have to
-give the instructions for the SUBTASK you can say click on the browser icon or type crome on the searching bar or something like that.
+For example a subtask can't be just to look for a google chrome icon. The subtask should be "Open the browser". 
+Then when you have to give the instructions for the SUBTASK you can say click on the browser icon or type crome on the searching bar or something like that.
+Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing subtask or instructions
+that consist on doing a screenshot, locating an element or recording coordinates. Don't add a last subtask that says finish the task.
+It has to be a meaningful subtask.
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:** First, think step-by-step about how to break down the main task. Consider the actions involved and ensure each subtask is actionable but not overly granular. Write down your thought process here.
@@ -155,7 +158,7 @@ class PlanningExpert:
             logger.error(f"Error in decompose_main_task() of planning_expert: {e}")
             raise
     
-    def is_last_task(self, SOM) -> bool:
+    def task_done(self, SOM) -> bool:
         """
         Determines if the main task is complete by querying an LLM.
 
@@ -225,7 +228,7 @@ class PlanningExpert:
             logger.error(f"Error in rethink_subtask_list() of planning_expert: {e}")
             raise
     
-    def decompose_subtask(self) -> str:
+    def decompose_subtask(self, SOM) -> str:
         """
         Decomposes the current active subtask into a detailed list of instructions/steps.
 
@@ -300,7 +303,7 @@ if __name__ == "__main__":
 
     action_expert_feedback = "I pressed the browser icon"
     print("caso 2.1: tarea no está acabada")
-    done = planning_expert.is_last_task(SOM)
+    done = planning_expert.task_done(SOM)
     if done:
         print("return {'done': True}")
     else:
@@ -340,7 +343,7 @@ if __name__ == "__main__":
 
     print("caso 2.2: tarea sí está acabada")
     planning_expert._set_current_task_as_last()
-    done = planning_expert.is_last_task(SOM)
+    done = planning_expert.task_done(SOM)
     if done:
         print("return {'done': True}")
     else:
