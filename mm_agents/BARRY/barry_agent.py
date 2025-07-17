@@ -202,21 +202,27 @@ class BarryAgent:
             return {"next": "end"}
         
         def reflection_expert(state: State):
-            
-            if state.get("error_expert_feedback", None) is None:
-                info_for_error_expert, reflection_expert_feedback = self.reflection_expert.predict(
-                    state.get("execution_error", ""), # si no hay execution error es que simplemente ha acabado su lista
-                    state.get("action_expert_feedback", ""), # las instruction list ya las ha guardado el planning cuando crea nuevas
-                    self.SOM) 
-                
+            """
+            case 1: Action expert has an execution error during the execution of the instruction list
 
-                if info_for_error_expert is not None:
-                    return {"info_for_error_expert": info_for_error_expert}
+            case 2: Action expert finishes execution its instruction list without any execution error
+            """
+            # case 1
+            if state["osworld_action"].startswith("error:"):
+                reflection_expert_feedback = self.reflection_expert.execution_error_reflection(
+                    state["osworld_action"],
+                    state["action_expert_feedback"],
+                    self.SOM_screenshot) 
+                
+            # case 2
             else:
-                # no le pasamos nada más porque ya lo tiene guardado en el historial del chat
-                reflection_expert_feedback = self.reflection_expert.predict_with_error_expert_feedback(state["error_expert_feedback"], self.SOM)
+                reflection_expert_feedback = self.reflection_expert.finished_instructions_eval(
+                    state["action_expert_feedback"],
+                    self.SOM_screenshot) 
+                if reflection_expert_feedback.startswith("Yes"):
+                    reflection_expert_feedback = ""
             
-            return {"reflection_expert_feedback": reflection_expert_feedback} # si ya ha acabado correctamente este feedback dirá que ha acabado correctamente
+            return {"reflection_expert_feedback": reflection_expert_feedback}
 
         
 
