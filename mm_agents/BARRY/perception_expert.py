@@ -1,6 +1,8 @@
 import base64
 import requests
 import os
+from PIL import Image
+from io import BytesIO
 from dotenv import load_dotenv
 
 class PerceptionExpert:
@@ -22,6 +24,28 @@ class PerceptionExpert:
         self.screenshot = ""
         self.som_screenshot = ""
         self.som_description = ""
+
+    # LOCAL FUNCTIONS
+    def _format_som_description(self, elements):
+        """
+        Formats the description of the SOM image to be human-readable instead of having a JSON format.
+        
+        Args:
+            elements(str): Description in JSON format
+        
+        Returns:
+            som_description(str): Description in human-readable content
+        """
+        formatted_list = []
+        for element in elements:
+            element_type = element.get('type', 'unknown')
+            content = element.get('content', 'no content')
+            is_interactive = "Interactive" if element.get('interactivity', False) else "non-interactive"
+            bbox = [round(b,3) for b in element.get('bbox', [])]
+
+            formatted_list.append(f"- {element_type.capitalize()}: '{content}' (Bounding Box: {bbox}, {is_interactive})")
+        
+        return "\n".join(formatted_list)
 
     def store_screenshot(self, screenshot):
         """
@@ -53,8 +77,13 @@ class PerceptionExpert:
             response = requests.post(url, json=payload)
             response.raise_for_status() # Raise an exception for HTTP Errors
             result = response.json()
-            self.som_screenshot = result["som_image_base64"]
-            self.som_description = result["parsed_content_list"]
+            
+            # Convert the base64 string to a Pillow Image
+            som_image_64 = result["som_image_base64"]
+            image_bytes = base64.b64decode(som_image_64)
+            self.som_screenshot = Image.open(BytesIO(image_bytes))
+            
+            self.som_description = self._format_som_description(result["parsed_content_list"])
 
         except requests.exceptions.RequestException as e:
             raise ConnectionError(f"Error connecting to Omniparser server: {e}")
