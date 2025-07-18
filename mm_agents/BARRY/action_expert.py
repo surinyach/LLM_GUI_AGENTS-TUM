@@ -20,11 +20,14 @@ You will be provided with an instruction, a screenshot, and a Semantic Object Ma
 ### Semantic Object Map (SOM)
 {SOM_Description}
 
+### Feedback
+{feedback}
+
 ### Rules
 1.  **Analyze screen state**: Use the screenshot and SOM to understand the current GUI state.
 2.  **Determine next action**: Identify the correct PyAutoGUI command for the instruction.
 3.  **Output format**: Respond with **only** a single line of valid PyAutoGUI code.  All coordinates in the output must be in pixels (integers).
-4.  **Constraints**: Do not include any extra text, explanations, comments, or code imports. 
+4.  **Constraints**: Do not include any extra text, explanations, comments, or code imports.
 5.  **Format**: Important! Do not enclose the response in backticks or any other formatting.
 
 ### Supported PyAutoGUI Actions
@@ -68,7 +71,7 @@ class ActionExpert:
         """
         self.current_instruction = new_instruction
     
-    def process_instruction(self, new_screenshot, new_som_screenshot, new_som_description):
+    def process_instruction(self, new_screenshot, new_som_screenshot, new_som_description, reflection_feedback):
         """
         This functions provide the Pyautogui code generation needed to solve the current instruction.
 
@@ -76,6 +79,8 @@ class ActionExpert:
             new_screenshot(PIL Image): Vanilla image containing the current state of the OSWorld environment. 
             new_som_screenshot(PIL Image): SOM picture of the current state of the OSWorld environment.
             new_som_description(str): Description of the elements shown in the SOM screenshot.
+            reflection_feedback(str): If the action expert has tried to solve the instruction and has failed by a minor error,
+                                      it contains the description of the error and a solution. "" otherwise.
         
         Return:
             action(str): pyautogui code that needs to be executed within osworld environment.
@@ -84,7 +89,8 @@ class ActionExpert:
             logger.info("Process Instruction dentro del Action Expert")
             prompt= PROMPT.format(
                 instruction=self.current_instruction,
-                SOM_Description=new_som_description
+                SOM_Description=new_som_description,
+                feedback=reflection_feedback
             )
             logger.info("Prompt enviado al LLM dentro del Action Expert: " + prompt)
             action = self.chat.send_message([prompt, new_screenshot, new_som_screenshot])
@@ -168,6 +174,8 @@ if __name__ == "__main__":
     - Icon: 'M0,0L9,0 4.5,5z' (Bounding Box: [0.0, 0.948, 0.007, 0.998], Interactive)
     """
 
-    action = action_expert.process_instruction(new_screenshot, new_som_screenshot, new_som_description)
+    feedback = ""
+
+    action = action_expert.process_instruction(new_screenshot, new_som_screenshot, new_som_description, feedback)
     print(action)
     
