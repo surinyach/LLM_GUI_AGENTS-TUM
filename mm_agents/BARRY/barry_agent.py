@@ -94,7 +94,7 @@ class BarryAgent:
                 return {"next": "planning_expert"}
                 
             logger.info("me voy al action expert")
-            return {"next": "action_expert"}
+            return {"next": "reflection_expert"}
         
         def planning_expert(state: State):
             """
@@ -127,7 +127,7 @@ class BarryAgent:
                 self.first_iteration = False
 
             # case 2
-            elif state["reflection_expert_feedback"] == "":
+            elif state["reflection_planning"] == "finish":
                 done = self.planning_expert.main_task_done(self.SOM_screenshot)
                 if done:
                     return {"done": True}
@@ -136,7 +136,7 @@ class BarryAgent:
                    
             # case 3
             else:
-                subtask = self.planning_expert.rethink_subtask_list(state["reflection_expert_feedback"], self.screenshot)
+                subtask = self.planning_expert.rethink_subtask_list(state["reflection_planning"], self.screenshot)
 
             # This has to be done after every case:
             instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
@@ -202,26 +202,47 @@ class BarryAgent:
         
         def reflection_expert(state: State):
             """
-            case 1: Action expert has an execution error during the execution of the instruction list
+                Evaluates the most recent execution of the action expert. 
+                Depending on this evaluation it performs one of the following cases:
 
-            case 2: Action expert finishes execution its instruction list without any execution error
-            """
-            # case 1
-            if state["execution_error"]:
-                reflection_expert_feedback = self.reflection_expert.execution_error_reflection(
-                    state["execution_error"],
-                    state["action_expert_feedback"],
-                    self.SOM_screenshot) 
+                case 1: The instruction was successful, now it checks if it was the last instruction:
+                    - it was the last instruction: {reflection_planning: 'finish'}
+                    - it wasn't the last instruction: action_expert.set_current_instruction(next_instruction)
                 
-            # case 2
-            else:
-                reflection_expert_feedback = self.reflection_expert.finished_instructions_eval(
-                    state["action_expert_feedback"],
-                    self.SOM_screenshot) 
-                if reflection_expert_feedback.startswith("Yes"):
-                    reflection_expert_feedback = ""
+                case 2: The instruction has failed, evaluates if the error was minor or major:
+                    - It was a minor error: {reflection_action: error and how to solve it}
+                    - It was a major error: {reflection_planning: error and how to solve it}
+            """
+            successful = reflection_expert.evalutate_execution(self.screenshot)
+
+            # case 1
+            if successful:
+                is_last_instruction = reflection_expert.is_last_instruction()
+                if is_last_instruction:
+                    return {
+                        "reflection_planning": 'finish',
+                        "reflection_action": ""
+                    }
+                else:
+                    next_instruction = reflection_expert.get_next_instruction()
+                    action_expert.set_current_instruction(next_instruction)
+                    return {
+                        "reflection_planning": "",
+                        "reflection_action": ""
+                    }
             
-            return {"reflection_expert_feedback": reflection_expert_feedback}
+            # case 2
+            evaluated_error = reflection_expert.evaluate_error(self.screenshot)
+            if evaluated_error.startswith("Minor:"):
+                return {
+                    "reflection_action": evaluated_error,
+                    "reflection_planning": ""
+                }
+            else:
+                return {
+                    "refelction_action": "",
+                    "reflection_planning": evaluated_error
+                }
 
         
 

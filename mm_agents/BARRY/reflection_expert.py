@@ -29,7 +29,43 @@ Decide if the subtask is finished according to this feedback
 and the screenshot. Start the response with a 'Yes' or a 'No'. If it is no, explain why.
 """
 
-SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE = "This is the task: {subtask} and these are the instructions: {instruction_list}"
+SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE = "This is the subtask: '{subtask}'"
+
+EVALUATE_EXECUTION_PROMPT = """
+I have executed this instruction: '{instruction}'.
+By what you see in my screen, do I have completed well?
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, think step by step your thoughts. 
+2.  **Revised instruction:** After your reasoning, you MUST respond only respond 'yes' or 'no' to indicate if the instruction was completed successfully.
+The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
+
+Example of how the response should appear:
+RESPONSE: yes
+"""
+
+EVALUATE_ERROR_PROMPT = """
+Tell me if the last error is a major or minor error. This is how you can classify an error:
+
+Minor: The instruction can still be completed in the current state of the screen. For example:
+ - the action agent has clicked the wrong button but with the current screen it is still possible to click the right button
+ - It has been typed the wrong word but you can still deleted and write the correct one
+ - The action expert couldn't click the right coordintates to move the slider but you can help him to aim better given the current position of the cursor.
+
+Major: The instruction can not be completed anymore with the current state of the screen. For example:
+ - The action expert clicked a button and the wrong page appeared.
+ - The action expert tried to type on a search bar but the screen does not have a search bar
+ - The action expert tried to click an icon that does not exist
+
+You only have 3 chances in a row to solve the same minor error. If it keeps failing it is now a major error.
+
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, think step by step your thoughts. 
+2.  **Revised instruction:** After your reasoning, you MUST respond with what caused the error and different solutions to solve it.
+The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
+
+Example of how the response should appear:
+RESPONSE: Minor: You should click slightly more to the right.
+"""
 
 
 class ReflectionExpert:
@@ -47,12 +83,18 @@ class ReflectionExpert:
         self.model = genai.GenerativeModel(model_id)
 
         self.chat = self.model.start_chat(history=[])
-        
         self.last_printed_index = 0
+
+        self.instruction_list = []
+        self.instruction_index = 0
+        self.subtask = ""
+
+        self.last_printed_index = 0 # this is for printing the chat history for debugging
 
     
     
-    def set_subtask_and_instructions(self, subtask: str, instruction_list: str) -> None:
+
+    def set_subtask_and_instructions(self, subtask: str, instruction_list) -> None:
         """
         Adds the current subtask and its generated instructions to the chat history.
 
@@ -72,7 +114,6 @@ class ReflectionExpert:
         try:
             content_message_string = SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE.format(
                 subtask=subtask,
-                instruction_list=instruction_list
             )
             
             content_to_add = genai.protos.Content(
@@ -81,8 +122,10 @@ class ReflectionExpert:
             )
 
             self.chat.history.append(content_to_add)
+            self.instruction_list = instruction_list
+            self.instruction_index = 0
             
-            logger.info(f"Subtask '{subtask}' and its instructions added to chat history.")
+            logger.info(f"Subtask '{subtask}' and first instruction added to chat history.")
         
         except Exception as e:
             logger.error(f"Error in set_subtask_and_instructions() of reflection_expert: {e}")
@@ -172,21 +215,107 @@ class ReflectionExpert:
         
         self.last_printed_index = len(self.chat.history)
     
+    def evaluate_execution(self, screenshot):
+        prompt = EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+        response =self.chat.send_message([prompt, screenshot])
+        parts = response.text.split("RESPONSE:", 1)
+        final_response = parts[1].strip()
+
+        return final_response == "yes"
+    
+    def is_last_instruction(self):
+        return len(self.instruction_list) - 1 == self.instruction_index
+    
+    def get_next_instruction(self):
+        self.instruction_index += 1
+        return self.instruction_list[self.instruction_index]
+    
+    def evaluate_error(self, screenshot):
+        prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+        response =self.chat.send_message([prompt, screenshot])
+        parts = response.text.split("RESPONSE:", 1)
+        final_response = parts[1].strip()
+
+        return final_response
+
+    def _print_history(self):
+        for i in range(self.last_printed_index, len(self.chat.history)):
+            message = self.chat.history[i]
+            text_content = message.parts[0].text 
+            print(f"{message.role}: {{ \"{text_content}\" }}")
+        
+        self.last_printed_index = len(self.chat.history)
+
+    
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(__file__) # Obtiene el directorio del script actual
     image_folder = os.path.join(current_dir, 'mocks')
 
     reflection_expert = ReflectionExpert()
-    subtask = "dime lo que dice la primera pagina web sobre perros"
-    instruction_list = """
-    1. abre el navegador
-    2. busca perros en la barra de búsqueda
-    3. pulsa en el primer link
-    4. copia el contenido del link que acabas de abrir
-    """
-    reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
+    subtask = "buscar imagenes de perros"
+    instruction_list = [
+    "abre el navegador",
+    "pulsar en la sección de imagenes",
+    "pulsa en el primer link",
+    "copia el contenido del link que acabas de abrir"
+    ]
 
+    image_name = 'som_screenshot_2.png'
+    image_path = os.path.join(image_folder, image_name)
+    screenshot = Image.open(image_path)
+
+    reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
+    successful = reflection_expert.evaluate_execution(screenshot)
+
+    # case 1
+    if successful:
+        is_last_instruction = reflection_expert.is_last_instruction()
+        if is_last_instruction:
+            print("""return {
+                'reflection_planning': 'finish',
+                'reflection_action': ''
+            }""")
+        else:
+            next_instruction = reflection_expert.get_next_instruction()
+            #action_expert.set_current_instruction(next_instruction)
+            print("""return {
+                "reflection_planning": "",
+                "reflection_action": ""
+            }""")
+    
+    reflection_expert._print_history()
+
+    
+    # case 2
+    image_name = 'som_screenshot_3.png'
+    image_path = os.path.join(image_folder, image_name)
+    screenshot = Image.open(image_path)
+
+    successful = reflection_expert.evaluate_execution(screenshot)
+
+    evaluated_error = reflection_expert.evaluate_error(screenshot)
+    if evaluated_error.startswith("Minor:"):
+        print("""return {
+            "reflection_action": evaluated_error,
+            "reflection_planning": ""
+        }""")
+    else:
+        print("""return {
+            "refelction_action": "",
+            "reflection_planning": evaluated_error
+        }""")
+
+    reflection_expert._print_history()
+
+        
+
+
+
+
+    
+    
+    """
     # caso 1 --------------------------------
     image_name = 'som_screenshot_4.png'
     image_path = os.path.join(image_folder, image_name)
@@ -214,9 +343,9 @@ if __name__ == "__main__":
 
     subtask = "descargate la foto de un perro"
     instruction_list = """
-    1. pulsa la sección de imagenes
-    2. haz click derecho sobre la imagen de un perro
-    3. dale a guardar como
+    #1. pulsa la sección de imagenes
+    #2. haz click derecho sobre la imagen de un perro
+    #3. dale a guardar como
     """
     reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
     action_expert_feedback = "He pulsado en la sección de imagenes después he pulsado click derecho sobre la imagen de un perro y la he guardado "
@@ -243,9 +372,9 @@ if __name__ == "__main__":
 
     subtask = "descargate la foto de un perro"
     instruction_list = """
-    1. pulsa la sección de imagenes
-    2. haz click derecho sobre la imagen de un perro
-    3. dale a guardar como
+    #1. pulsa la sección de imagenes
+    #2. haz click derecho sobre la imagen de un perro
+    #3. dale a guardar como
     """
     reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
     action_expert_feedback = "He pulsado en la sección de imagenes después he pulsado click derecho sobre la imagen de un perro y la he guardado "
@@ -264,7 +393,7 @@ if __name__ == "__main__":
     reflection_expert._print_history()
     
     print("caso 2.2 terminado -----------------------------------------------\n")
-
+    """
 
 
     
