@@ -120,26 +120,31 @@ class BarryAgent:
                 to save the subtask and instruction list.
                 
             """
+
             # case 1
             if self.first_iteration:
                 logger.info("nodo planning expert: primera iteración")
-                subtask = self.planning_expert.decompose_main_task(self.main_task, self.SOM_screenshot)
+                subtask = self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
+                instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
+
                 self.first_iteration = False
 
             # case 2
             elif state["reflection_expert_feedback"] == "":
-                done = self.planning_expert.task_done(self.SOM_screenshot)
+                done = self.planning_expert.task_done(self.screenshot)
                 if done:
                     return {"done": True}
                 else:
                    subtask = self.planning_expert.rethink_subtask_list("", state["action_expert_feedback"], self.SOM_screenshot)
+                   instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
+
                    
             # case 3
             else:
-                subtask = self.planning_expert.rethink_subtask_list(state["reflection_expert_feedback"], state["action_expert_feedback"], self.SOM_screenshot)
+                # here the subtask is the same as it was before
+                instruction_list, subtask = self.planning_expert.rethink_instruction_list(state["reflection_expert_feedback"], state["action_expert_feedback"], self.SOM_screenshot)
 
             # This has to be done after every case:
-            instruction_list = self.planning_expert.decompose_subtask(self.SOM_screenshot)
 
             self.action_expert.set_subtask_and_instructions(subtask, instruction_list)
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
@@ -195,7 +200,7 @@ class BarryAgent:
             }
         
         def action_router(state: State):
-            condition = state["osworld_action"] == "finish" or state["execution_error"]
+            condition = "finish" in state["osworld_action"] or state["execution_error"]
             if condition: 
                 return {"next": "reflection_expert"}
             

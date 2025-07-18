@@ -17,7 +17,8 @@ and this is why i could't do it:
 
 {execution_error}
 
-Give me feedback on how to solve the errors.
+Give me feedback on how to solve the errors. If an error is recurrent think about others way to solve it that not involves
+to perform the steps that are causing the error such as combination keys or console commands.
 I also pass you a screenshot 
 """
 

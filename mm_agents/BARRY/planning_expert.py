@@ -65,6 +65,28 @@ move the mouse to th icon. As in pyAutoGUI you give the coordinates when you cli
 Please provide the decomposed steps as a clear list or sequence. 
 """
 
+RETHINK_INSTRUCTION_LIST_TEMPLATE = """
+The action expert is trying to do this subtask: "{current_subtask}". This is what he has done:
+
+{action_expert_feedback}
+
+However, this may not be very accurate. He might think he has done that but maybe he has done some clicks wrong.
+This is what the reflection expert thinks. You should trust him more:
+
+{reflection_expert_feedback}
+
+If this problem it is repeating and it is not being solve try to solve it in others ways. For example the action expert may
+not be able to click an icon or a slider. A other way to solve it could be using hot keys or using a command in the terminal.
+
+Now decompose the subtask into instructions as mentioned before. Without instructions saying to take screenshots or reference elemments.
+
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. Think step-by-step about why the subtask list needs rethinking (if an issue was raised) or what the next logical steps are (if the current subtask is finished). Based on this, formulate the revised list of remaining subtasks. Write down your thought process here.
+2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of instructions. This list MUST start with the exact phrase "INSTRUCTION_LIST:" on its own line, followed immediately by the instructions. These doesn't need to be separated by';'.
+
+
+"""
+
 IS_LAST_TASK_PROMPT_TEMPLATE = """
 I correctly finished this subtask: {current_subtask}. Is there any more task to do?
 Take into account your last task decomposition into subtask. Respond only with 'yes' or 'no'.
@@ -262,6 +284,55 @@ class PlanningExpert:
         except Exception as e:
             logger.error(f"Error in decompose_subtask() of planning_expert: {e}")
             raise
+    
+    def rethink_instruction_list(self, action_expert_feedback, reflection_expert_feedback, SOM):
+        """
+        Decomposes the current active subtask into a detailed list of instructions/steps.
+
+        This function interacts with an LLM to break down the subtask, considering
+        the feedback of the action expert, the reflection expert and the
+        current screen state (SOM). It's designed to generate actionable steps
+        for the action expert.
+
+        Args:
+            reflection_expert_feedback (str): Feedback from the reflection expert, indicating issues.
+            action_expert_feedback (str): A summary of the actions taken during the execution of the previous instruction list.
+            SOM (any): The State of Mind (SOM) or current screen representation,
+                       providing visual and contextual information to the LLM.
+
+        Returns:
+            str: A string containing the LLM-generated instructions for the subtask.
+        """
+
+        logger.info("Decomposing the current subtask into instructions but with action expert feedback and reflection expert feedback .")
+        try:
+            
+
+            prompt = RETHINK_INSTRUCTION_LIST_TEMPLATE.format(
+                current_subtask=self.current_subtask,
+                action_expert_feedback = action_expert_feedback,
+                reflection_expert_feedback = reflection_expert_feedback
+            )
+
+            response = self.chat.send_message([prompt, SOM])
+
+            logger.info(f"Instructions created by LLM: {response.text}")
+
+            marker = "INSTRUCTION_LIST:"
+            parts = response.text.split(marker, 1) # Use 1 to split only on the first occurrence
+            if len(parts) < 2:
+                print(f"Warning: Marker '{marker}' not found in the response.")
+                return []
+
+            # Grab the part after the marker and strip leading/trailing whitespace (including newlines)
+            subtasks_raw_string = parts[1].strip()
+                
+            return subtasks_raw_string, self.current_subtask
+        
+        except Exception as e:
+            logger.error(f"Error in decompose_subtask() of planning_expert: {e}")
+            raise
+
     
     def _set_current_task_as_last(self):
         self.current_subtask = self.last_task_for_test
