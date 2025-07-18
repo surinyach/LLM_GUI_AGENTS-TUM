@@ -74,9 +74,8 @@ class BarryAgent:
         # STATE --------------------------------------------------------------------
 
         class State(TypedDict):
-            action_expert_feedback: str
-            reflection_expert_feedback: str
-            execution_error:str
+            reflection_action: str
+            reflection_planning: str
 
             osworld_action: str
             done: bool
@@ -93,8 +92,8 @@ class BarryAgent:
                 logger.info("me voy al planning expert")
                 return {"next": "planning_expert"}
                 
-            logger.info("me voy al action expert")
-            return {"next": "action_expert"}
+            logger.info("me voy al reflection expert")
+            return {"next": "reflection_expert"}
         
         def planning_expert(state: State):
             """
@@ -146,20 +145,15 @@ class BarryAgent:
         def action_expert(state: State):
             """
             Action expert case definition:
-                1. Planning returns instruction list == done, meaning that the general task is fullfilled.
-                2. Previous iteration has finished the instruction list, informing consequently the action router.
-                3. An error has been produced trying to resolve the instruction.
-                4. Needs to keep executing instructions from the instruction list.
+                1. Planning returns == done, meaning that the general task is fullfilled.
+                2. Needs to keep executing instructions from the instruction list.
 
             Args:
                 State: State of the graph containing the syncronised variables. 
 
             Return:
                 1. state.osworld_action = done, notifying the benchmark the task is finished.
-                2. state.action_expert_feedback = description of the actions done since now.
-                3. state.osworld_action = finish and state.execution_error = response containing the error and its description and state.action_expert_feedack =
-                description of the actions done since now.
-                4. state.osworld_action = pyautogui code to be executed by the benchmark.
+                2. state.osworld_action = pyautogui code to be executed by the benchmark.
             """
 
             state["execution_error"] = ""
@@ -168,37 +162,23 @@ class BarryAgent:
             if (state["done"]):
                 logger.info("Primer caso del Barry Action Expert: Done")
                 return {"osworld_action": "done"}
-
-            # Process the current instruction from the instruction list
-            action = self.action_expert.process_instruction(self.SOM_screenshot, self.SOM_description)
             
             # Case 2
-            if (action == "finish"):
-                logger.info("Segundo caso del Barry Action Expert: Se han terminado las instrucciones, finish")
-                return {
-                    "osworld_action": action,
-                    "action_expert_feedback": self.action_expert.summarize_done_instructions(),
-                }
 
-            # Case 3
-            if (action.startswith("error:")):
-                logger.info("Tercer caso del Barry Action Expert: Se ha producido un error tratando de resolver la tarea")
-                return {
-                    "execution_error": action.split("error:", 1)[-1],
-                    "action_expert_feedback": self.action_expert.summarize_done_instructions()
-                }
-        
-            # Case 4
+            # Process the current instruction from the instruction list
+            feedback = state["reflection_action"]
+            action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description, feedback)
+            
             return {
                 "osworld_action": action
-            }
+            }            
         
-        def action_router(state: State):
-            condition = state["osworld_action"] == "finish" or state["execution_error"]
+        def reflection_router(state: State):
+            condition = state["reflection_planning"] != ""
             if condition: 
-                return {"next": "reflection_expert"}
+                return {"next": "planning_expert"}
             
-            return {"next": "end"}
+            return {"next": "action_expert"}
         
         def reflection_expert(state: State):
             """
@@ -230,23 +210,23 @@ class BarryAgent:
         graph_builder.add_node("start_router", start_router)
         graph_builder.add_node("planning_expert", planning_expert)
         graph_builder.add_node("action_expert", action_expert)
-        graph_builder.add_node("action_router", action_router)
         graph_builder.add_node("reflection_expert", reflection_expert)
+        graph_builder.add_node("reflection_router", reflection_router)
 
         graph_builder.add_edge(START, "start_router")
         graph_builder.add_conditional_edges(
             "start_router",
             lambda state: state.get("next"),
-            {"planning_expert": "planning_expert", "action_expert": "action_expert"}
+            {"planning_expert": "planning_expert", "reflection_expert": "reflection_expert"}
         )
         graph_builder.add_edge("planning_expert", "action_expert")
-        graph_builder.add_edge("action_expert", "action_router")
+        graph_builder.add_edge("action_expert", END)
+        graph_builder.add_edge("reflection_expert", "reflection_router")
         graph_builder.add_conditional_edges(
-            "action_router",
+            "reflection_router",
             lambda state: state.get("next"),
-            {"reflection_expert": "reflection_expert", "end": END}
+            {"action_expert": "action_expert", "planning_expert": "planning_expert"}
         )
-        graph_builder.add_edge("reflection_expert", "planning_expert")
 
         # COMPILE ---------------------------------------------------
 
@@ -294,9 +274,8 @@ class BarryAgent:
                 # Inicializa el estado del grafo con la tarea principal si es la primera vez
                 # LangGraph se encargará de inicializar instruction_list en planning_expert
                 self.graph_state = {
-                    "action_expert_feedback": "",
-                    "reflection_expert_feedback": "",
-                    "execution_error": "",
+                    "reflection_action": "",
+                    "reflection_planning": "",
 
                     "done": False,
                     "osworld_action": "",
