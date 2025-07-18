@@ -140,7 +140,9 @@ class BarryAgent:
             # This has to be done after every case:
             instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
 
+
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
+            self.action_expert.set_current_instruction(instruction_list[0])
 
         def action_expert(state: State):
             """
@@ -156,8 +158,6 @@ class BarryAgent:
                 2. state.osworld_action = pyautogui code to be executed by the benchmark.
             """
 
-            state["execution_error"] = ""
-
             # Case 1
             if (state["done"]):
                 logger.info("Primer caso del Barry Action Expert: Done")
@@ -167,7 +167,7 @@ class BarryAgent:
 
             # Process the current instruction from the instruction list
             feedback = state["reflection_action"]
-            action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description, feedback)
+            action = self.action_expert.process_instruction(self.screenshot, feedback)
             
             return {
                 "osworld_action": action
@@ -193,26 +193,26 @@ class BarryAgent:
                     - It was a minor error: {reflection_action: error and how to solve it}
                     - It was a major error: {reflection_planning: error and how to solve it}
             """
-            successful = reflection_expert.evalutate_execution(self.screenshot)
+            successful = self.reflection_expert.evaluate_execution(self.screenshot)
 
             # case 1
             if successful:
-                is_last_instruction = reflection_expert.is_last_instruction()
+                is_last_instruction = self.reflection_expert.is_last_instruction()
                 if is_last_instruction:
                     return {
                         "reflection_planning": 'finish',
                         "reflection_action": ""
                     }
                 else:
-                    next_instruction = reflection_expert.get_next_instruction()
-                    action_expert.set_current_instruction(next_instruction)
+                    next_instruction = self.reflection_expert.get_next_instruction()
+                    self.action_expert.set_current_instruction(next_instruction)
                     return {
                         "reflection_planning": "",
                         "reflection_action": ""
                     }
             
             # case 2
-            evaluated_error = reflection_expert.evaluate_error(self.screenshot)
+            evaluated_error = self.reflection_expert.evaluate_error(self.screenshot)
             if evaluated_error.startswith("Minor:"):
                 return {
                     "reflection_action": evaluated_error,

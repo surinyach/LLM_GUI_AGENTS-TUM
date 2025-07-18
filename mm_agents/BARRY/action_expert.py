@@ -12,19 +12,16 @@ PROMPT = """
 You are an expert agent for the OSWorld environment. Your sole purpose is to translate a given instruction into a precise PyAutoGUI command.
 
 ### Task
-You will be provided with an instruction, a screenshot, and a Semantic Object Map (SOM) description. Your task is to generate the single, exact PyAutoGUI command that accomplishes the instruction.
+You will be provided with an instruction, a screenshot and feedback if you failed previously solving the instruction. Your task is to generate the single, exact PyAutoGUI command that accomplishes the instruction.
 
 ### Instruction
 {instruction}
-
-### Semantic Object Map (SOM)
-{SOM_Description}
 
 ### Feedback
 {feedback}
 
 ### Rules
-1.  **Analyze screen state**: Use the screenshot and SOM to understand the current GUI state.
+1.  **Analyze screen state**: Use the screenshot to understand the current GUI state.
 2.  **Determine next action**: Identify the correct PyAutoGUI command for the instruction.
 3.  **Output format**: Respond with **only** a single line of valid PyAutoGUI code.  All coordinates in the output must be in pixels (integers).
 4.  **Constraints**: Do not include any extra text, explanations, comments, or code imports.
@@ -71,7 +68,7 @@ class ActionExpert:
         """
         self.current_instruction = new_instruction
     
-    def process_instruction(self, new_screenshot, new_som_screenshot, new_som_description, reflection_feedback):
+    def process_instruction(self, new_screenshot, reflection_feedback):
         """
         This functions provide the Pyautogui code generation needed to solve the current instruction.
 
@@ -89,11 +86,10 @@ class ActionExpert:
             logger.info("Process Instruction dentro del Action Expert")
             prompt= PROMPT.format(
                 instruction=self.current_instruction,
-                SOM_Description=new_som_description,
                 feedback=reflection_feedback
             )
             logger.info("Prompt enviado al LLM dentro del Action Expert: " + prompt)
-            action = self.chat.send_message([prompt, new_screenshot, new_som_screenshot])
+            action = self.chat.send_message([prompt, new_screenshot])
             logger.info("Respuesta recibida por el LLM en el Action Expert: " + action.text)
             return action.text
 
