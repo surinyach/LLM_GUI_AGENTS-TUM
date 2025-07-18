@@ -33,9 +33,6 @@ Rethink the subtask list. This might be due to an issue:
 {reflection_expert_feedback}
 
 or if there is no issue is because I've finished the current subtask: "{current_subtask}" and i want to know the rest of subtask that I have to do.
-This is what I did: 
-
-{action_expert_feedback}
 
 Take into account this feedback and my past actions/messages.
 I am also providing you with the current state of my screen.
@@ -51,7 +48,7 @@ SUBTASK_LIST: Select the "Images" tab; Choose a dog image; Download the image; C
 """
 
 DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
-Taking into account any feedback provided in previous interactions (if there was)
+Taking into account any feedback provided in the previous message (if there was)
 and a summary of actions already performed (if described in previous messages),
 decompose the following specific subtask into a series of detailed steps or instructions.
 Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing instructions
@@ -63,10 +60,21 @@ These steps do not need to be overly precise if the environment details are not 
 However think that this steps will have to be translated into pyAutoGUI actions so it is not necessary to say
 move the mouse to th icon. As in pyAutoGUI you give the coordinates when you click.
 Please provide the decomposed steps as a clear list or sequence. 
+
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. 
+Think step-by-step about why the instruction list needs rethinking (if an issue was raised) or what the next logical steps are. 
+Based on this, formulate the instruction list for the current subtask. Write down your thought process here.
+2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "INSTRUCTION_LIST:" on its own line, followed immediately by the instructions. 
+All text from "INSTRUCTION_LIST:" until the end of your response will be considered the revised list of instructions. Each instruction should be separated by a semicolon ';'.
+
+Example of how the revised subtask list should appear:
+INSTRUCTION_LIST: Click on the browser icon; Click on the search bar; Type dogs.
 """
 
 IS_LAST_TASK_PROMPT_TEMPLATE = """
-I correctly finished this subtask: {current_subtask}. Is there any more task to do?
+I correctly finished this subtask: {current_subtask}. This is the main task: {main_task}
+Taking into account the subtask list you gave me is the main task done?
 Take into account your last task decomposition into subtask. Respond only with 'yes' or 'no'.
 """
 
@@ -98,7 +106,7 @@ class PlanningExpert:
         self.first_iter = True
 
 
-    def _parse_subtask_response(self, response_text: str) -> List[str]:
+    def _parse_subtask_response(self, response_text: str, marker) -> List[str]:
         """
         Parses the raw text response from the LLM, by splitting on "SUBTASK_LIST:"
         and taking the latter part. Assumes subtasks are separated by ';'.
@@ -112,9 +120,7 @@ class PlanningExpert:
         """
         if not response_text:
             return []
-
-        marker = "SUBTASK_LIST:"
-
+        print("text to parse: ", response_text)
         parts = response_text.split(marker, 1) # Use 1 to split only on the first occurrence
 
         if len(parts) < 2:
@@ -150,7 +156,8 @@ class PlanningExpert:
             self.main_task = main_task
             prompt = DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE.format(main_task=main_task)
             response = self.chat.send_message([prompt, SOM])
-            subtask_list = self._parse_subtask_response(response.text)
+            marker = "SUBTASK_LIST:"
+            subtask_list = self._parse_subtask_response(response.text, marker)
             logger.info(f"These are the subtasks created: {subtask_list}") 
             
             self.current_subtask = subtask_list[0]
@@ -160,7 +167,7 @@ class PlanningExpert:
             logger.error(f"Error in decompose_main_task() of planning_expert: {e}")
             raise
     
-    def task_done(self, SOM) -> bool:
+    def main_task_done(self, SOM) -> bool:
         """
         Determines if the main task is complete by querying an LLM.
 
@@ -175,20 +182,20 @@ class PlanningExpert:
         logger.info("Querying LLM to check if this was the last task.")
 
         try:
-            prompt = IS_LAST_TASK_PROMPT_TEMPLATE.format(current_subtask=self.current_subtask )
+            prompt = IS_LAST_TASK_PROMPT_TEMPLATE.format(current_subtask=self.current_subtask, main_task = self.main_task)
             response = self.chat.send_message([prompt, SOM])
             
             # Clean the LLM's response (remove whitespace, convert to lowercase)
             llm_response_text = response.text.strip().lower()
 
             logger.info(f"LLM responded to 'is_last_task' with: '{llm_response_text}'")
-            return llm_response_text == 'no'
+            return llm_response_text == 'yes'
         
         except Exception as e:
             logger.error(f"Error in is_last_task() of planning_expert: {e}")
             raise
-    
-    def rethink_subtask_list(self, reflection_expert_feedback: str, action_expert_feedback: str, SOM) -> None:
+
+    def rethink_subtask_list(self, reflection_expert_feedback: str, SOM) -> None:
         """
         Revises the current list of subtasks based on feedback and current progress.
 
@@ -213,12 +220,11 @@ class PlanningExpert:
             prompt = RETHINK_SUBTASK_PROMPT_TEMPLATE.format(
                 reflection_expert_feedback=reflection_expert_feedback,
                 current_subtask=self.current_subtask,
-                action_expert_feedback=action_expert_feedback,
                 main_task=self.main_task
             )
             response = self.chat.send_message([prompt, SOM])
-            
-            subtask_list = self._parse_subtask_response(response.text)
+            marker = "SUBTASK_LIST:"
+            subtask_list = self._parse_subtask_response(response.text, marker )
             self.last_task_for_test = subtask_list[-1] # esto es solo para facilitar la prueba de casos en los test
             self.current_subtask = subtask_list[0]
             logger.info(f"New subtask list received from LLM: {subtask_list}\n")
@@ -256,8 +262,10 @@ class PlanningExpert:
 
             response = self.chat.send_message([prompt, SOM])
             logger.info(f"Instructions created by LLM: {response.text}")
+            marker = "INSTRUCTION_LIST:"
+            instruction_list = self._parse_subtask_response(response.text, marker)
             
-            return response.text
+            return instruction_list
         
         except Exception as e:
             logger.error(f"Error in decompose_subtask() of planning_expert: {e}")
@@ -290,11 +298,13 @@ if __name__ == "__main__":
 
     print("caso 1, main task:", main_task)
     subtask = planning_expert.decompose_main_task(main_task, SOM)
-    print("esta es la primera subtarea: " + subtask + "\n")
-    instruction_list = planning_expert.decompose_subtask()
-    print("esta es la lista de instrucciones: " + instruction_list + "\n")
+    instruction_list = planning_expert.decompose_subtask(SOM)
 
     planning_expert._print_history()
+    print("esta es la primera subtarea: " + subtask + "\n")
+    print("esta es la lista de instrucciones: ", instruction_list)
+
+
 
     print("caso 1 terminado -----------------------------------------------\n")
 
@@ -303,15 +313,14 @@ if __name__ == "__main__":
     image_path = os.path.join(image_folder, image_name)
     SOM = Image.open(image_path)
 
-    action_expert_feedback = "I pressed the browser icon"
     print("caso 2.1: tarea no está acabada")
-    done = planning_expert.task_done(SOM)
+    done = planning_expert.main_task_done(SOM)
     if done:
         print("return {'done': True}")
     else:
-        subtask = planning_expert.rethink_subtask_list("", action_expert_feedback, SOM)
+        subtask = planning_expert.rethink_subtask_list("", SOM)
     
-    instruction_list = planning_expert.decompose_subtask()
+    instruction_list = planning_expert.decompose_subtask(SOM)
     
     planning_expert._print_history()
 
@@ -325,7 +334,6 @@ if __name__ == "__main__":
     image_path = os.path.join(image_folder, image_name)
     SOM = Image.open(image_path)
 
-    action_expert_feedback = "I pressed right click on the image and then pressed save"
     reflection_expert_feedback = """
     the task it is not done, it has click on video section instead of the image section. 
     It should press the image section and then download a photo.
@@ -335,7 +343,7 @@ if __name__ == "__main__":
 
     print("caso 3: Ha acabado la lista pero el reflection expert dice que no está bien acabada")
 
-    subtask = planning_expert.rethink_subtask_list(reflection_expert_feedback, action_expert_feedback, SOM)
+    subtask = planning_expert.rethink_subtask_list(reflection_expert_feedback, SOM)
 
     planning_expert._print_history()
 
@@ -345,11 +353,11 @@ if __name__ == "__main__":
 
     print("caso 2.2: tarea sí está acabada")
     planning_expert._set_current_task_as_last()
-    done = planning_expert.task_done(SOM)
+    done = planning_expert.main_task_done(SOM)
     if done:
         print("return {'done': True}")
     else:
-        subtask = planning_expert.rethink_subtask_list("", "", SOM)
+        subtask = planning_expert.rethink_subtask_list("", SOM)
     
     planning_expert._print_history()
     
