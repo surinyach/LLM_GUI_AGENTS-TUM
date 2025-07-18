@@ -122,30 +122,26 @@ class BarryAgent:
                 
             """
 
-            # case 1
+                      # case 1
             if self.first_iteration:
                 logger.info("nodo planning expert: primera iteración")
                 subtask = self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
-                instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
-
                 self.first_iteration = False
 
             # case 2
             elif state["reflection_expert_feedback"] == "":
-                done = self.planning_expert.task_done(self.screenshot)
+                done = self.planning_expert.main_task_done(self.screenshot)
                 if done:
                     return {"done": True}
                 else:
-                   subtask = self.planning_expert.rethink_subtask_list("", state["action_expert_feedback"], self.SOM_screenshot)
-                   instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
-
+                   subtask = self.planning_expert.rethink_subtask_list("", state["action_expert_feedback"], self.screenshot)
                    
             # case 3
             else:
-                # here the subtask is the same as it was before
-                instruction_list, subtask = self.planning_expert.rethink_instruction_list(state["reflection_expert_feedback"], state["action_expert_feedback"], self.SOM_screenshot)
+                subtask = self.planning_expert.rethink_subtask_list(state["reflection_expert_feedback"], state["action_expert_feedback"], self.screenshot)
 
             # This has to be done after every case:
+            instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
 
             self.action_expert.set_subtask_and_instructions(subtask, instruction_list)
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
@@ -169,15 +165,17 @@ class BarryAgent:
                 4. state.osworld_action = pyautogui code to be executed by the benchmark.
             """
 
-            state["execution_error"] = ""
 
             # Case 1
             if (state["done"]):
                 logger.info("Primer caso del Barry Action Expert: Done")
-                return {"osworld_action": "done"}
+                return {
+                    "osworld_action": "done",
+                    "execution_error": ""
+                }
 
             # Process the current instruction from the instruction list
-            action = self.action_expert.process_instruction(self.SOM_screenshot, self.SOM_description)
+            action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description)
             
             # Case 2
             if (action == "finish"):
@@ -185,6 +183,7 @@ class BarryAgent:
                 return {
                     "osworld_action": action,
                     "action_expert_feedback": self.action_expert.summarize_done_instructions(),
+                    "execution_error": ""
                 }
 
             # Case 3
@@ -197,11 +196,12 @@ class BarryAgent:
         
             # Case 4
             return {
-                "osworld_action": action
+                "osworld_action": action,
+                "execution_error": ""
             }
         
         def action_router(state: State):
-            condition = "finish" in state["osworld_action"] or state["execution_error"]
+            condition = "finish" in state["osworld_action"] or state["execution_error"] != ""
             if condition: 
                 return {"next": "reflection_expert"}
             
@@ -218,13 +218,13 @@ class BarryAgent:
                 reflection_expert_feedback = self.reflection_expert.execution_error_reflection(
                     state["execution_error"],
                     state["action_expert_feedback"],
-                    self.SOM_screenshot) 
+                    self.screenshot) 
                 
             # case 2
             else:
                 reflection_expert_feedback = self.reflection_expert.finished_instructions_eval(
                     state["action_expert_feedback"],
-                    self.SOM_screenshot) 
+                    self.screenshot) 
                 if reflection_expert_feedback.startswith("Yes"):
                     reflection_expert_feedback = ""
             

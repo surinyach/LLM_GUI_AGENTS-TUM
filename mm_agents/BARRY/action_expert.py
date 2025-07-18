@@ -19,6 +19,8 @@ You are an expert agent for the OSWorld environment. Your sole purpose is to tra
 
 ### Input Format
 
+- **Screenshot:** The vanilla screenshot of the current state of the target machine.
+- **SOM screenshot:** A screenshot with different marks on the elements showed in the screen.
 - **SOM description**: A string containing a list of screen elements with their type, content, interactivity, and bounding box. Example: `- Icon: 'Firefox' (Bounding Box: [0.0, 0.028, 0.037, 0.089], Interactive)`
 - **Task**: The overall goal of the session.
 - **Instruction list**: A numbered list of subtasks to be completed. You must always address the very next incomplete instruction.
@@ -67,10 +69,13 @@ Return only the word, no comas or any other punctuation mark.
 ACTION_PROMPT="""
 ### Current Screen State
 
-- **New SOM description**:
+- **Screenshot**: A raw image of the current screen.
+- **SOM Screenshot**: An image of the screen with visual bounding boxes highlighting interactive and non-interactive elements.
+- **SOM Description**: A detailed text description of all elements on the screen, including their labels, types (e.g., Text, Icon), and bounding box coordinates.
 {SOM_Description}
 
-Proceed to the next required action based on the task and instructions already provided, using both the attached image and this description of its elements.
+Proceed with the next required action based on the task and instructions provided at the beginning of our conversation. 
+You must use all three inputs—the vanilla screenshot for visual context, the SOM screenshot for spatial awareness, and the SOM description for precise element identification and coordinates—to determine the most accurate click location.
 """
 
 SUMMARY_PROMPT="""
@@ -136,10 +141,10 @@ class ActionExpert:
                 "parts": initial_prompt
             }
         ]
-        logger.info(f"Initial context of the Action Expert: {initial_context}") 
+        logger.info(f"Initial context of the Action Expert: " + initial_prompt) 
         self.chat = self.model.start_chat(history=initial_context)
 
-    def process_instruction(self, new_som_screenshot, new_som_description):
+    def process_instruction(self, new_screenshot, new_som_screenshot, new_som_description):
         """
         This functions has three possible outcomes.
             1. Pyautogui code generation needed to solve the current instruction.
@@ -161,7 +166,7 @@ class ActionExpert:
                 SOM_Description=new_som_description
             )
             logger.info("Prompt enviado al LLM dentro del Action Expert: " + prompt)
-            action = self.chat.send_message([prompt, new_som_screenshot])
+            action = self.chat.send_message([prompt, new_screenshot, new_som_screenshot])
             logger.info("Respuesta recibida por el LLM en el Action Expert: " + action.text)
             return action.text
 

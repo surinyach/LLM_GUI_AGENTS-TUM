@@ -28,17 +28,19 @@ SUBTASK_LIST: Open the browser; Search for "example" on Google; Do something; Fi
 """
 
 RETHINK_SUBTASK_PROMPT_TEMPLATE = """
-Rethink the subtask list. This might be due to an issue: 
-
-{reflection_expert_feedback}
-
-or if there is no issue is because I've finished the current subtask: "{current_subtask}" and i want to know the rest of subtask that I have to do.
-This is what I did: 
+The action expert is trying to do this subtask: "{current_subtask}". This is what he has done:
 
 {action_expert_feedback}
 
-Take into account this feedback and my past actions/messages.
-I am also providing you with the current state of my screen.
+However, this may not be very accurate. He might think he has done that but maybe he has done some clicks wrong.
+This is what the reflection expert thinks. You should trust him more:
+
+{reflection_expert_feedback}
+
+If this problem it is repeating and it is not being solve try to solve it in others ways. For example the action expert may
+not be able to click an icon or a slider. A other way to solve it could be using hot keys or using a command in the terminal.
+
+I am also providing you with the screen that is currently seeing the action expert.
 
 Now, provide a revised subtask list with what is still left to do to accomplish the main task: {main_task}.
 
@@ -51,13 +53,12 @@ SUBTASK_LIST: Select the "Images" tab; Choose a dog image; Download the image; C
 """
 
 DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
-Taking into account any feedback provided in previous interactions (if there was)
-and a summary of actions already performed (if described in previous messages),
-decompose the following specific subtask into a series of detailed steps or instructions.
-Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing instructions
-that consist on doing a screenshot, locating an element or recording coordinates.
-The answer should only contain the steps, don't add any comments.
-{current_subtask}.
+Now decompose the first subtask into instructions as mentioned before. Without instructions saying to take screenshots or reference elemments.
+
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. Think step-by-step about why the subtask list needs rethinking (if an issue was raised) or what the next logical steps are (if the current subtask is finished). Based on this, formulate the revised list of remaining subtasks. Write down your thought process here.
+2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of instructions. This list MUST start with the exact phrase "INSTRUCTION_LIST:" on its own line, followed immediately by the instructions. These doesn't need to be separated by';'.
+
 
 These steps do not need to be overly precise if the environment details are not fully known yet.
 However think that this steps will have to be translated into pyAutoGUI actions so it is not necessary to say
@@ -88,7 +89,8 @@ Here's how I want you to structure your response:
 """
 
 IS_LAST_TASK_PROMPT_TEMPLATE = """
-I correctly finished this subtask: {current_subtask}. Is there any more task to do?
+I correctly finished this subtask: {current_subtask}. This is the main task: {main_task}
+Taking into account the subtask list you gave me is the main task done?
 Take into account your last task decomposition into subtask. Respond only with 'yes' or 'no'.
 """
 
@@ -182,7 +184,7 @@ class PlanningExpert:
             logger.error(f"Error in decompose_main_task() of planning_expert: {e}")
             raise
     
-    def task_done(self, SOM) -> bool:
+    def main_task_done(self, SOM) -> bool:
         """
         Determines if the main task is complete by querying an LLM.
 
@@ -197,14 +199,14 @@ class PlanningExpert:
         logger.info("Querying LLM to check if this was the last task.")
 
         try:
-            prompt = IS_LAST_TASK_PROMPT_TEMPLATE.format(current_subtask=self.current_subtask )
+            prompt = IS_LAST_TASK_PROMPT_TEMPLATE.format(current_subtask=self.current_subtask, main_task = self.main_task)
             response = self.chat.send_message([prompt, SOM])
             
             # Clean the LLM's response (remove whitespace, convert to lowercase)
             llm_response_text = response.text.strip().lower()
 
             logger.info(f"LLM responded to 'is_last_task' with: '{llm_response_text}'")
-            return llm_response_text == 'no'
+            return llm_response_text == 'yes'
         
         except Exception as e:
             logger.error(f"Error in is_last_task() of planning_expert: {e}")
@@ -272,51 +274,11 @@ class PlanningExpert:
         try:
             
 
-            prompt = DECOMPOSE_SUBTASK_PROMPT_TEMPLATE.format(
-                current_subtask=self.current_subtask,
-            )
+            prompt = DECOMPOSE_SUBTASK_PROMPT_TEMPLATE
 
             response = self.chat.send_message([prompt, SOM])
             logger.info(f"Instructions created by LLM: {response.text}")
-            
-            return response.text
-        
-        except Exception as e:
-            logger.error(f"Error in decompose_subtask() of planning_expert: {e}")
-            raise
-    
-    def rethink_instruction_list(self, action_expert_feedback, reflection_expert_feedback, SOM):
-        """
-        Decomposes the current active subtask into a detailed list of instructions/steps.
 
-        This function interacts with an LLM to break down the subtask, considering
-        the feedback of the action expert, the reflection expert and the
-        current screen state (SOM). It's designed to generate actionable steps
-        for the action expert.
-
-        Args:
-            reflection_expert_feedback (str): Feedback from the reflection expert, indicating issues.
-            action_expert_feedback (str): A summary of the actions taken during the execution of the previous instruction list.
-            SOM (any): The State of Mind (SOM) or current screen representation,
-                       providing visual and contextual information to the LLM.
-
-        Returns:
-            str: A string containing the LLM-generated instructions for the subtask.
-        """
-
-        logger.info("Decomposing the current subtask into instructions but with action expert feedback and reflection expert feedback .")
-        try:
-            
-
-            prompt = RETHINK_INSTRUCTION_LIST_TEMPLATE.format(
-                current_subtask=self.current_subtask,
-                action_expert_feedback = action_expert_feedback,
-                reflection_expert_feedback = reflection_expert_feedback
-            )
-
-            response = self.chat.send_message([prompt, SOM])
-
-            logger.info(f"Instructions created by LLM: {response.text}")
 
             marker = "INSTRUCTION_LIST:"
             parts = response.text.split(marker, 1) # Use 1 to split only on the first occurrence
@@ -326,12 +288,60 @@ class PlanningExpert:
 
             # Grab the part after the marker and strip leading/trailing whitespace (including newlines)
             subtasks_raw_string = parts[1].strip()
-                
-            return subtasks_raw_string, self.current_subtask
+                            
+            return subtasks_raw_string
         
         except Exception as e:
             logger.error(f"Error in decompose_subtask() of planning_expert: {e}")
             raise
+    
+    # def rethink_instruction_list(self, action_expert_feedback, reflection_expert_feedback, SOM):
+    #     """
+    #     Decomposes the current active subtask into a detailed list of instructions/steps.
+
+    #     This function interacts with an LLM to break down the subtask, considering
+    #     the feedback of the action expert, the reflection expert and the
+    #     current screen state (SOM). It's designed to generate actionable steps
+    #     for the action expert.
+
+    #     Args:
+    #         reflection_expert_feedback (str): Feedback from the reflection expert, indicating issues.
+    #         action_expert_feedback (str): A summary of the actions taken during the execution of the previous instruction list.
+    #         SOM (any): The State of Mind (SOM) or current screen representation,
+    #                    providing visual and contextual information to the LLM.
+
+    #     Returns:
+    #         str: A string containing the LLM-generated instructions for the subtask.
+    #     """
+
+    #     logger.info("Decomposing the current subtask into instructions but with action expert feedback and reflection expert feedback .")
+    #     try:
+            
+
+    #         prompt = RETHINK_INSTRUCTION_LIST_TEMPLATE.format(
+    #             current_subtask=self.current_subtask,
+    #             action_expert_feedback = action_expert_feedback,
+    #             reflection_expert_feedback = reflection_expert_feedback
+    #         )
+
+    #         response = self.chat.send_message([prompt, SOM])
+
+    #         logger.info(f"Instructions created by LLM: {response.text}")
+
+    #         marker = "INSTRUCTION_LIST:"
+    #         parts = response.text.split(marker, 1) # Use 1 to split only on the first occurrence
+    #         if len(parts) < 2:
+    #             print(f"Warning: Marker '{marker}' not found in the response.")
+    #             return []
+
+    #         # Grab the part after the marker and strip leading/trailing whitespace (including newlines)
+    #         subtasks_raw_string = parts[1].strip()
+                
+    #         return subtasks_raw_string, self.current_subtask
+        
+    #     except Exception as e:
+    #         logger.error(f"Error in decompose_subtask() of planning_expert: {e}")
+    #         raise
 
     
     def _set_current_task_as_last(self):
