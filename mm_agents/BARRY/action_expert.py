@@ -18,13 +18,17 @@ You will be provided with an instruction, a screenshot, and a Semantic Object Ma
 {instruction}
 
 ### Semantic Object Map (SOM)
-{som_description}
+{SOM_Description}
+
+### Feedback
+{feedback}
 
 ### Rules
 1.  **Analyze screen state**: Use the screenshot and SOM to understand the current GUI state.
 2.  **Determine next action**: Identify the correct PyAutoGUI command for the instruction.
-3.  **Output format**: Respond with **only** a single line of valid PyAutoGUI code.
-4.  **Constraints**: Do not include any extra text, explanations, comments, or code imports. Do not enclose the response in backticks or any other formatting.
+3.  **Output format**: Respond with **only** a single line of valid PyAutoGUI code.  All coordinates in the output must be in pixels (integers).
+4.  **Constraints**: Do not include any extra text, explanations, comments, or code imports.
+5.  **Format**: Important! Do not enclose the response in backticks or any other formatting.
 
 ### Supported PyAutoGUI Actions
 * `pyautogui.click(x, y)`
@@ -39,7 +43,7 @@ You will be provided with an instruction, a screenshot, and a Semantic Object Ma
 """
 
 class ActionExpert:
-    def __init__(self, model_id: str = "gemini-2.0-flash"):
+    def __init__(self, model_id: str = "gemini-2.5-flash"):
         """
         Inicializa el experto en acciones con la API de Gemini.
         """
@@ -56,17 +60,7 @@ class ActionExpert:
 
         self.current_instruction = ""
     
-
     # GLOBAL FUNCTIONS 
-    
-    def get_instruction_list(self):
-        """
-        Instruction list getter.
-
-        Return:
-            instruction_list(str): The instruction list to complete the current subtask.
-        """
-        return self.instruction_list
     
     def set_current_instruction(self, new_instruction):
         """
@@ -75,9 +69,9 @@ class ActionExpert:
         Args:
             new_instruction(str): Sets the new current instruction that needs to be solved.
         """
-        self.set_current_instruction(new_instruction)
+        self.current_instruction = new_instruction
     
-    def process_instruction(self, new_screenshot, new_som_screenshot, new_som_description):
+    def process_instruction(self, new_screenshot, new_som_screenshot, new_som_description, reflection_feedback):
         """
         This functions provide the Pyautogui code generation needed to solve the current instruction.
 
@@ -85,6 +79,8 @@ class ActionExpert:
             new_screenshot(PIL Image): Vanilla image containing the current state of the OSWorld environment. 
             new_som_screenshot(PIL Image): SOM picture of the current state of the OSWorld environment.
             new_som_description(str): Description of the elements shown in the SOM screenshot.
+            reflection_feedback(str): If the action expert has tried to solve the instruction and has failed by a minor error,
+                                      it contains the description of the error and a solution. "" otherwise.
         
         Return:
             action(str): pyautogui code that needs to be executed within osworld environment.
@@ -93,7 +89,8 @@ class ActionExpert:
             logger.info("Process Instruction dentro del Action Expert")
             prompt= PROMPT.format(
                 instruction=self.current_instruction,
-                SOM_Description=new_som_description
+                SOM_Description=new_som_description,
+                feedback=reflection_feedback
             )
             logger.info("Prompt enviado al LLM dentro del Action Expert: " + prompt)
             action = self.chat.send_message([prompt, new_screenshot, new_som_screenshot])
@@ -108,19 +105,77 @@ if __name__ == "__main__":
     logger.info("Probando el Action Expert")
     logger.info("Process instruction:")
     action_expert = ActionExpert()
-    subtask = """
-    Open the browser
-    """ 
-    instruction_list = """
-    1. Click on the browser logo to open it
-    """
-    action_expert.set_subtask_and_instructions(subtask, instruction_list)
 
-    new_som_screenshot_path = "./screenshot.png"
+    current_instruction="Open the browser"
+    action_expert.set_current_instruction(current_instruction)
+
+    new_screenshot_path = "./screenshot.png"
+    new_screenshot = Image.open(new_screenshot_path)
+
+    new_som_screenshot_path = "./annotated.png"
     new_som_screenshot = Image.open(new_som_screenshot_path)
 
-    new_som_description=""
+    new_som_description="""
+    Parsed elements:
+    - Text: 'transcript_of_re;' (Bounding Box: [0.127, 0.361, 0.182, 0.376], non-interactive)
+    - Text: 'CURRICULUMS' (Bounding Box: [0.066, 0.793, 0.12, 0.812], non-interactive)
+    - Text: '21*€' (Bounding Box: [0.033, 0.958, 0.051, 0.973], non-interactive)
+    - Text: '18.21' (Bounding Box: [0.968, 0.955, 0.989, 0.973], non-interactive)
+    - Text: 'dx 0J' (Bounding Box: [0.909, 0.961, 0.94, 0.983], non-interactive)
+    - Text: 'Mayorm: soleado' (Bounding Box: [0.033, 0.977, 0.095, 0.992], non-interactive)
+    - Text: '18/07/2025' (Bounding Box: [0.946, 0.973, 0.99, 0.992], non-interactive)
+    - Icon: 'Busqueda ' (Bounding Box: [0.256, 0.954, 0.402, 0.992], Interactive)
+    - Icon: 'Papelera de reciclaje ' (Bounding Box: [0.005, 0.003, 0.059, 0.11], Interactive)
+    - Icon: 'Adobe Acrobat ' (Bounding Box: [0.059, 0.0, 0.128, 0.114], Interactive)
+    - Icon: 'Oracle VM VirtualBox ' (Bounding Box: [0.943, 0.006, 0.992, 0.11], Interactive)
+    - Icon: 'TUM ' (Bounding Box: [0.131, 0.001, 0.178, 0.118], Interactive)
+    - Icon: 'Engine exe ' (Bounding Box: [0.951, 0.448, 0.99, 0.525], Interactive)
+    - Icon: 'Arduino IDE ' (Bounding Box: [0.949, 0.151, 0.992, 0.234], Interactive)
+    - Icon: 'VMware Workstation Pro ' (Bounding Box: [0.881, 0.146, 0.936, 0.258], Interactive)
+    - Icon: 'KeePass ' (Bounding Box: [0.072, 0.436, 0.117, 0.553], Interactive)
+    - Icon: 'GIMP 2.10.38 ' (Bounding Box: [0.878, 0.004, 0.94, 0.121], Interactive)
+    - Icon: 'INLAB ' (Bounding Box: [0.068, 0.573, 0.117, 0.694], Interactive)
+    - Icon: 'FortiClient VPN ' (Bounding Box: [0.0, 0.135, 0.067, 0.265], Interactive)
+    - Icon: 'PDF Expedient_ECT_ ' (Bounding Box: [0.117, 0.437, 0.183, 0.556], Interactive)
+    - Icon: 'PALAU INSCRIPCIO_ ' (Bounding Box: [0.072, 0.29, 0.112, 0.393], Interactive)
+    - Icon: 'Microsoft Edge ' (Bounding Box: [0.003, 0.573, 0.058, 0.693], Interactive)
+    - Icon: 'Steam ' (Bounding Box: [0.953, 0.298, 0.989, 0.38], Interactive)
+    - Icon: 'duet ' (Bounding Box: [0.014, 0.295, 0.048, 0.406], Interactive)
+    - Icon: 'PDF Transcript_of ' (Bounding Box: [0.121, 0.573, 0.188, 0.696], Interactive)
+    - Icon: 'Firefox_ ' (Bounding Box: [0.014, 0.442, 0.05, 0.528], Interactive)
+    - Icon: 'Obsidian ' (Bounding Box: [0.011, 0.733, 0.056, 0.824], Interactive)
+    - Icon: 'Cheat Engine ' (Bounding Box: [0.883, 0.307, 0.932, 0.379], Interactive)
+    - Icon: 'PDF ' (Bounding Box: [0.142, 0.296, 0.17, 0.357], Interactive)
+    - Icon: 'Shuffle 3' (Bounding Box: [0.689, 0.956, 0.716, 0.996], Interactive)
+    - Icon: 'Settings' (Bounding Box: [0.748, 0.956, 0.771, 0.997], Interactive)
+    - Icon: 'Windows' (Bounding Box: [0.228, 0.952, 0.254, 0.992], Interactive)
+    - Icon: 'Microsoft 365' (Bounding Box: [0.719, 0.957, 0.744, 0.997], Interactive)
+    - Icon: 'Internet Explorer - web browser' (Bounding Box: [0.577, 0.953, 0.602, 0.992], Interactive)
+    - Icon: 'folder' (Bounding Box: [0.49, 0.955, 0.513, 0.99], Interactive)
+    - Icon: 'Microsoft Edge browser.' (Bounding Box: [0.52, 0.955, 0.541, 0.99], Interactive)
+    - Icon: 'Movie Maker' (Bounding Box: [0.605, 0.953, 0.628, 0.992], Interactive)
+    - Icon: 'Copy' (Bounding Box: [0.405, 0.951, 0.428, 0.99], Interactive)
+    - Icon: 'Firefox' (Bounding Box: [0.632, 0.954, 0.658, 0.994], Interactive)
+    - Icon: 'Teams' (Bounding Box: [0.461, 0.954, 0.484, 0.989], Interactive)
+    - Icon: 'Microsoft OneNote' (Bounding Box: [0.434, 0.954, 0.454, 0.988], Interactive)
+    - Icon: 'Text Box' (Bounding Box: [0.664, 0.955, 0.685, 0.995], Interactive)
+    - Icon: 'Toggle Lock' (Bounding Box: [0.924, 0.947, 0.94, 1.0], Interactive)
+    - Icon: 'Microsoft Office.' (Bounding Box: [0.549, 0.954, 0.57, 0.989], Interactive)
+    - Icon: 'Redo' (Bounding Box: [0.871, 0.949, 0.89, 0.996], Interactive)
+    - Icon: 'M0,0L9,0 4.5,5z' (Bounding Box: [0.83, 0.953, 0.847, 0.993], Interactive)
+    - Icon: 'Dismiss' (Bounding Box: [0.908, 0.947, 0.924, 0.999], Interactive)
+    - Icon: 'WiFi' (Bounding Box: [0.892, 0.948, 0.909, 0.997], Interactive)
+    - Icon: 'Cloud' (Bounding Box: [0.848, 0.949, 0.869, 0.994], Interactive)
+    - Icon: 'Norton Weather' (Bounding Box: [0.008, 0.949, 0.033, 0.994], Interactive)
+    - Icon: 'The File Manager - Home Manager' (Bounding Box: [0.071, 0.141, 0.114, 0.26], Interactive)
+    - Icon: 'Initiative' (Bounding Box: [0.076, 0.738, 0.109, 0.786], Interactive)
+    - Icon: 'a beach or ocean view.' (Bounding Box: [0.99, 0.002, 1.0, 0.104], Interactive)
+    - Icon: 'a table or counter.' (Bounding Box: [0.991, 0.444, 1.0, 0.529], Interactive)
+    - Icon: 'M0,0L9,0 4.5,5z' (Bounding Box: [0.0, 0.948, 0.007, 0.998], Interactive)
+    """
 
-    action = action_expert.process_instruction(new_som_screenshot, new_som_description)
-    feedback = action_expert.summarize_done_instructions()
+    feedback = ""
+
+    action = action_expert.process_instruction(new_screenshot, new_som_screenshot, new_som_description, feedback)
+    print(action)
     
