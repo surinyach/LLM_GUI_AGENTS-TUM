@@ -3,6 +3,7 @@ import requests
 import os
 from PIL import Image
 from io import BytesIO
+import io
 from dotenv import load_dotenv
 
 class PerceptionExpert:
@@ -109,5 +110,21 @@ class PerceptionExpert:
             SOM description with a JSON format
         """
         return self.som_description
+    
+    def get_screenshot(self):
+        """
+        Provides the vanilla screenshot without the SOM to the caller.
+        To do so, transforms self.screenshot into a PILLOW image.
 
+        Returns:
+            screenshot(PIL Image): The vanilla screenshot in PILLOW format.
+        """
+        # Decode the base64 string to bytes
+        image_bytes = base64.b64decode(self.screenshot)
+        # Use io.BytesIO to read 
+        image_stream = BytesIO(image_bytes)
+
+        # Open the image using PIL
+        pil_image = Image.open(image_stream)
+        return pil_image
 
