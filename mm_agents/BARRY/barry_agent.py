@@ -65,6 +65,7 @@ class BarryAgent:
         self.graph_state = {} 
 
         # SOM screenshot and description
+        self.screenshot = ""
         self.SOM_screenshot = ""
         self.SOM_description = ""
 
@@ -257,7 +258,7 @@ class BarryAgent:
         """
         Processes the new screenshot of the OSWorld environment through the Perception System.
         Generates the SOM of the screenshot and a description of its components.
-        Stores the results in the self.SOM_screenshot and self.SOM_description local variables.
+        Stores the results in the self.screenshot, self.SOM_screenshot andself.SOM_description local variables.
         """
         if self.observation_type not in ["screenshot"]:
             raise ValueError(f"observation_type not supported: {self.observation_type}")
@@ -269,6 +270,7 @@ class BarryAgent:
         self.perception_expert.process_screenshot()
 
         # Store the results in the local variables
+        self.screenshot = self.perception_expert.get_screenshot()
         self.SOM_screenshot = self.perception_expert.get_som_screenshot()
         self.SOM_description = self.perception_expert.get_som_description()
     
