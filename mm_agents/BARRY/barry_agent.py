@@ -117,32 +117,30 @@ class BarryAgent:
 
                 Common actions:
                 In the past cases the planning expert always returns a subtask. So after every case this task must be decomposed into
-                an instruction list. When we have the current subtask and instruction list we call the action expert and reflection expert
-                to save the subtask and instruction list.
+                an instruction list. When we have the current subtask and instruction list we call reflection expert to save the subtask and instruction list.
                 
             """
             # case 1
             if self.first_iteration:
                 logger.info("nodo planning expert: primera iteración")
-                subtask = self.planning_expert.decompose_main_task(self.main_task, self.SOM_screenshot)
+                subtask = self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
                 self.first_iteration = False
 
             # case 2
             elif state["reflection_expert_feedback"] == "":
-                done = self.planning_expert.task_done(self.SOM_screenshot)
+                done = self.planning_expert.main_task_done(self.SOM_screenshot)
                 if done:
                     return {"done": True}
                 else:
-                   subtask = self.planning_expert.rethink_subtask_list("", state["action_expert_feedback"], self.SOM_screenshot)
+                   subtask = self.planning_expert.rethink_subtask_list("", self.screenshot)
                    
             # case 3
             else:
-                subtask = self.planning_expert.rethink_subtask_list(state["reflection_expert_feedback"], state["action_expert_feedback"], self.SOM_screenshot)
+                subtask = self.planning_expert.rethink_subtask_list(state["reflection_expert_feedback"], self.screenshot)
 
             # This has to be done after every case:
-            instruction_list = self.planning_expert.decompose_subtask(self.SOM_screenshot)
+            instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
 
-            self.action_expert.set_subtask_and_instructions(subtask, instruction_list)
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
 
         def action_expert(state: State):
