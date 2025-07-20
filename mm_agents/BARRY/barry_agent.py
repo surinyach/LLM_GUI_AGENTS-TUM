@@ -167,7 +167,7 @@ class BarryAgent:
 
             # Process the current instruction from the instruction list
             feedback = state["reflection_action"]
-            action = self.action_expert.process_instruction(self.screenshot, feedback)
+            action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description, feedback)
             
             return {
                 "osworld_action": action
@@ -272,7 +272,55 @@ class BarryAgent:
         self.screenshot = self.perception_expert.get_screenshot()
         self.SOM_screenshot = self.perception_expert.get_som_screenshot()
         self.SOM_description = self.perception_expert.get_som_description()
+
+        # ---- NEW CODE TO SAVE THE SCREENSHOT ----
     
+        # 1. Define the directory to save the screenshots.
+        #    You can change 'screenshots' to any folder name you prefer.
+        save_directory = "screenshots"
+        
+        # 2. Create the directory if it doesn't exist.
+        if not os.path.exists(save_directory):
+            os.makedirs(save_directory)
+        
+        # 3. Get the screenshot (which is a PIL Image object).
+        #    Your code already gets the screenshot from the perception expert.
+        #    We can assume self.screenshot is a PIL Image object.
+        
+        # 4. Generate a unique filename.
+        #    Using a simple counter or a timestamp is a good approach.
+        #    Let's use a counter for this example. You would need to
+        #    initialize a counter in your class's __init__ method.
+        #    e.g., self.screenshot_counter = 0
+        
+        # Example using a counter:
+        # (Assuming you have a self.screenshot_counter attribute in your class's __init__)
+        # filename = f"screenshot_{self.screenshot_counter}.png"
+        # self.screenshot_counter += 1
+
+        # Example using a timestamp (more robust):
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"screenshot_{timestamp}.png"
+
+        # 5. Define the full path to save the file.
+        file_path = os.path.join(save_directory, filename)
+        
+        # 6. Save the screenshot.
+        try:
+            self.screenshot.save(file_path)
+            print(f"Screenshot saved to {file_path}")
+        except Exception as e:
+            print(f"Error saving screenshot: {e}")
+
+        # 7. Save SOM screenshot
+        som_filename = f"som_screenshot_{timestamp}.png"
+        file_path = os.path.join(save_directory, som_filename)
+        try:
+            self.SOM_screenshot.save(file_path)
+            print(f"SOM Screenshot saved to {file_path}")
+        except Exception as e:
+            print(f"Error saving screenshot: {e}")
 
     def predict(self, instruction: str, obs: Dict) -> Tuple[str, List[str]]:
         """
@@ -314,8 +362,9 @@ class BarryAgent:
                 return "se acabo lo que se daba", ["DONE"]
 
             if osworld_action_to_return:
-                logger.info(f"BarryAgent: Acción decidida por el agente: '{osworld_action_to_return}'")
-                return "esta es la siguiente acción", [osworld_action_to_return]
+                pyautogui_instructions = [line for line in osworld_action_to_return.strip().splitlines() if line]
+                pyautogui_instructions.append("time.sleep(1)")
+                return "esta es la siguiente acción", pyautogui_instructions
             else:
                 logger.warning("BarryAgent: El grafo no produjo una acción de OSWorld válida en esta iteración.")
                 return "FAIL: No OSWorld action generated in this cycle.", ["FAIL"]
