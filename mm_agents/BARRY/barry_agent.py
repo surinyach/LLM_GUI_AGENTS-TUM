@@ -15,6 +15,11 @@ from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+import time
+import io
+import pyautogui
+
+
 logging.basicConfig(
     level=logging.INFO,  # Set the minimum level for logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -68,6 +73,9 @@ class BarryAgent:
         self.screenshot = ""
         self.SOM_screenshot = ""
         self.SOM_description = ""
+
+        self.width = 0
+        self.height = 0
 
         # LANG GRAPH
 
@@ -273,12 +281,90 @@ class BarryAgent:
         self.SOM_screenshot = self.perception_expert.get_som_screenshot()
         self.SOM_description = self.perception_expert.get_som_description()
     
+    def save_existing_image(self, img_data, directory):
+        """
+        Guarda un objeto de imagen de Pillow existente en el directorio especificado.
 
+        Args:
+            img_data (Image.Image): El objeto de imagen de Pillow a guardar.
+            directory (str): El nombre del directorio donde se guardará la imagen.
+            filename (str): El nombre del archivo de la imagen (ej. "mi_captura.png").
+        """
+        print("hasta aquí bien 2")
+
+        if not os.path.exists(directory):
+            print("hasta aquí bien 3")
+
+            os.makedirs(directory)
+
+            print(f"Directorio '{directory}' creado.")
+        timestamp = int(time.time())
+    
+        # Crea el nombre del archivo con la marca de tiempo
+        filename = f"screenshot_{timestamp}.png"
+        filepath = os.path.join(directory, filename)
+        print("hasta aquí bien 5")
+
+        if isinstance(img_data, bytes):
+            print("Convirtiendo bytes a imagen de Pillow")
+            img_data = Image.open(io.BytesIO(img_data))
+
+        img_data.save(filepath)
+        print(f"Imagen guardada en: {filepath}")
+        return filepath
+    
+    def save_SOM_description(self, SOM_description, directory):
+        """
+        Guarda un objeto de imagen de Pillow existente en el directorio especificado.
+
+        Args:
+            img_data (Image.Image): El objeto de imagen de Pillow a guardar.
+            directory (str): El nombre del directorio donde se guardará la imagen.
+            filename (str): El nombre del archivo de la imagen (ej. "mi_captura.png").
+        """
+        print("hasta aquí bien 2")
+
+        if not os.path.exists(directory):
+            print("hasta aquí bien 3")
+
+            os.makedirs(directory)
+
+            print(f"Directorio '{directory}' creado.")
+        timestamp = int(time.time())
+    
+        # Crea el nombre del archivo con la marca de tiempo
+        filename = f"SOM_description{timestamp}"
+        filepath = os.path.join(directory, filename)
+        print("hasta aquí bien 5")
+
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(SOM_description)
+            print("hasta aquí bien 6")
+            print(f"Descripción SOM guardada en: {filepath}")
+            return filepath
+        
+        except IOError as e:
+            print(f"Error al guardar la descripción SOM en {filepath}: {e}")
+            return None
+        
+        
+    
     def predict(self, instruction: str, obs: Dict) -> Tuple[str, List[str]]:
         """
         Sends the screenshot and the instruction to the Agent in order to generate pyautogui actions.
         """
         logger.info("Predict de barry agent")
+        print(obs.keys())
+        # o para una vista más clara:
+        for key in obs.keys():
+            print(key)
+        width, height = pyautogui.size()
+        self.width = width
+        self.height = height
+        logger.info(f"width: {self.width}, height: {self.height}")
+
+
         self.trajectory_length += 1
         
         if self.trajectory_length > self.max_trajectory_length:
@@ -288,7 +374,15 @@ class BarryAgent:
         try:
             # Process the new screenshot and store it in the Perception Expert
             self._process_new_screenshot(obs)
-            
+            print("hasta aquí bien 1")
+            width, height =self.screenshot.size
+            print(f"Resolución: {width}x{height}")
+            self.save_existing_image(self.SOM_screenshot, "SCREEEEEEENSHOTS")
+            self.save_SOM_description(self.SOM_description, "SOM_DESCRIPTIOOONS")
+            coordenadas = input("introduce las coordenadas separadas por una coma y un espacio: ")
+            osworld_action_to_return = f"pyautogui.click({coordenadas})"
+            return "esta es la siguiente acción", [osworld_action_to_return]
+            """
             # Si es la primera iteración copiamos la tarea y la añadimos al historial
             if self.first_iteration:
                 self.main_task = instruction
@@ -320,11 +414,13 @@ class BarryAgent:
                 logger.warning("BarryAgent: El grafo no produjo una acción de OSWorld válida en esta iteración.")
                 return "FAIL: No OSWorld action generated in this cycle.", ["FAIL"]
 
+            """
             
         except Exception as e:
             logger.error(f"Error al procesar la solicitud a Gemini: {e}")
             return f"Error: {e}", ["FAIL"]
 
+    
 
     def reset(self, runtime_logger):
         """
