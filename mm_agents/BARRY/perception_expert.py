@@ -38,14 +38,16 @@ class PerceptionExpert:
             som_description(str): Description in human-readable content
         """
         formatted_list = []
-        for element in elements:
+        for idx, element in enumerate(elements, start=0):
             element_type = element.get('type', 'unknown')
             content = element.get('content', 'no content')
             is_interactive = "Interactive" if element.get('interactivity', False) else "non-interactive"
-            bbox = [round(b,3) for b in element.get('bbox', [])]
+            bbox = [round(b, 3) for b in element.get('bbox', [])]
 
-            formatted_list.append(f"- {element_type.capitalize()}: '{content}' (Bounding Box: {bbox}, {is_interactive})")
-        
+            formatted_list.append(
+                f"{idx}. {element_type.capitalize()}: '{content}' (Bounding Box: {bbox}, {is_interactive})"
+            )
+    
         return "\n".join(formatted_list)
 
     def store_screenshot(self, screenshot):

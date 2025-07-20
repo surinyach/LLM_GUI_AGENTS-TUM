@@ -3,6 +3,7 @@ import logging
 from dotenv import load_dotenv
 from PIL import Image
 import google.generativeai as genai
+from typing import List, Tuple
 
 logger = logging.getLogger("action_expert")
 
@@ -38,7 +39,69 @@ You will be provided with an instruction, a screenshot and feedback if you faile
 * `pyautogui.scroll(clicks)`
 * `time.sleep(seconds)`
 """
+PROMPT_STEP_1 = """
+This is what I need to do: "{instruction}" 
+and this is my screen right now. What should I do?
+"""
 
+PROMPT_STEP_2 = """
+This is the set of mark of my screen. For each element relationed with the instruction tell me:
+1. The number of the box they are encapsulated in
+2. What is this element.
+3. What is its function.
+
+
+REMEMBER!
+The numbers of the boxes are random!!! so it is very unlikely that the chosen boxes are in order.
+
+the sliders are not encapusalated in a whole box, only its interactable element. This interactable element usually has a wrong description
+
+Select at least 5 elements that are close and could be raltionated with the instruction topic so you can examine them and compare them later
+"""
+
+PROMPT_STEP_3 = """
+Now i'm going to pass you the description of the set of mark of the screen that i just passed you in the previous message. 
+I want you to look at the numbers you have chosen and reflect about if you got them right, If you looked at the wrong element, and if not, which number could be the right ones. 
+Probably if the numbers are in order they are plrobably wrong because the numbers are random.
+You could think about if the numbers are right or you should have gotten other elements taking into account the description or the coordinates of its boxes. 
+For example is there is an element with a box slightly to the left of the element you chose anad its description is brightness maybe you choose the brightness slider instead of the volume slider.
+
+{SOM_description}
+
+"""
+
+PROMPT_STEP_4 = """
+now, taking into account that this is the resolution of the screen: {width}x{height} 
+Give me te coordenates of the center of the box I have to click.
+"""
+
+PROMPT_STEP_5 = """
+Now give me the command (or the set of commands) in pyAutoGUI to perform the instruction with the coordinates of the last message.
+
+Supported pyautogui actions:
+* pyautogui.click(x, y)
+* pyautogui.doubleClick(x, y)
+* pyautogui.rightClick(x, y)
+
+* Dragging:
+- You will need two instructions to drag:
+* pyautogui.moveTo(x1,y1) (starting position)
+* pyautogui.dragTo(x2, y2, duration=duration, button=button) (ending position)
+
+* pyautogui.typewrite('text')
+* pyautogui.press('key')
+* pyautogui.hotkey('ctrl', 'c')
+* pyautogui.scroll(clicks)
+* time.sleep(seconds)
+
+The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
+If there is more than one command it should be separated only by a ';'. 
+
+Always add time.sleep(1) at the end of the commands
+
+Example of how the response should appear:
+RESPONSE: pyautogui.click(x, y);pyautogui.typewrite('text');time.sleep(1)
+"""
 class ActionExpert:
     def __init__(self, model_id: str = "gemini-2.5-flash"):
         """
@@ -55,9 +118,38 @@ class ActionExpert:
         self.model = genai.GenerativeModel(model_id)
         self.chat = self.model.start_chat(history=[])
 
+        self.last_printed_index = 0
         self.current_instruction = ""
     
     # GLOBAL FUNCTIONS 
+
+    def _parse_subtask_response(self, response_text: str, marker) -> List[str]:
+        """
+        Parses the raw text response from the LLM, by splitting on marker
+        and taking the latter part. Assumes subtasks are separated by ';'.
+
+        Args:
+            response_text (str): The full string response from the LLM.
+
+        Returns:
+            List[str]: A list containing each parsed subtask.
+                       Returns an empty list if the marker is not found or no subtasks are present.
+        """
+        if not response_text:
+            return []
+        print("text to parse: ", response_text)
+        parts = response_text.split(marker, 1) # Use 1 to split only on the first occurrence
+
+        if len(parts) < 2:
+            print(f"Warning: Marker '{marker}' not found in the response.")
+            return []
+
+        # Grab the part after the marker and strip leading/trailing whitespace (including newlines)
+        subtasks_raw_string = parts[1].strip()
+
+        # Split by semicolon and clean each individual task.
+        subtasks = [task.strip() for task in subtasks_raw_string.split(';') if task.strip()]
+        return subtasks
     
     def set_current_instruction(self, new_instruction):
         """
@@ -68,7 +160,15 @@ class ActionExpert:
         """
         self.current_instruction = new_instruction
     
-    def process_instruction(self, new_screenshot, reflection_feedback):
+    def _print_history(self):
+        for i in range(self.last_printed_index, len(self.chat.history)):
+            message = self.chat.history[i]
+            text_content = message.parts[0].text 
+            print(f"{message.role}: {{ \"{text_content}\" }}")
+        
+        self.last_printed_index = len(self.chat.history)
+    
+    def process_instruction(self, screenshot, SOM_screenshot, SOM_description):
         """
         This functions provide the Pyautogui code generation needed to solve the current instruction.
 
@@ -83,15 +183,32 @@ class ActionExpert:
             action(str): pyautogui code that needs to be executed within osworld environment.
         """
         try:
-            logger.info("Process Instruction dentro del Action Expert")
-            prompt= PROMPT.format(
-                instruction=self.current_instruction,
-                feedback=reflection_feedback
+            logger.info("Voy a procesar la siguiente instrucción:" + self.current_instruction)
+            prompt= PROMPT_STEP_1.format(
+                instruction=self.current_instruction
             )
-            logger.info("Prompt enviado al LLM dentro del Action Expert: " + prompt)
-            action = self.chat.send_message([prompt, new_screenshot])
-            logger.info("Respuesta recibida por el LLM en el Action Expert: " + action.text)
-            return action.text
+            self.chat.send_message([prompt, screenshot])
+
+            prompt= PROMPT_STEP_2
+            self.chat.send_message([prompt, SOM_screenshot])
+
+            prompt= PROMPT_STEP_3.format(
+                SOM_description=SOM_description
+            )
+            self.chat.send_message(prompt)
+
+            width, height = screenshot.size
+            prompt= PROMPT_STEP_4.format(
+                width=width,
+                height=height
+            )
+            self.chat.send_message(prompt)
+
+            prompt= PROMPT_STEP_5
+            response = self.chat.send_message(prompt)
+            self._print_history()
+            actions = self._parse_subtask_response(response.text, "RESPONSE:")
+            return actions
 
         except Exception as e:
             logger.error(f"Error in process instruction function of the Action Expert: {e}")

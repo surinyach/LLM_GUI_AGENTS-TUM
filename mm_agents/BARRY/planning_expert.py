@@ -65,7 +65,7 @@ Here's how I want you to structure your response:
 1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. 
 Think step-by-step about why the instruction list needs rethinking (if an issue was raised) or what the next logical steps are. 
 Based on this, formulate the instruction list for the current subtask. Write down your thought process here.
-2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "INSTRUCTION_LIST:" on its own line, followed immediately by the instructions. 
+2.  **Revised Instruction List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "INSTRUCTION_LIST:" on its own line, followed immediately by the instructions. 
 All text from "INSTRUCTION_LIST:" until the end of your response will be considered the revised list of instructions. Each instruction should be separated by a semicolon ';'.
 
 Example of how the revised subtask list should appear:

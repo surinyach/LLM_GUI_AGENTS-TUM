@@ -77,7 +77,7 @@ class BarryAgent:
             reflection_action: str
             reflection_planning: str
 
-            osworld_action: str
+            osworld_action: List[str]
             done: bool
         
 
@@ -161,13 +161,12 @@ class BarryAgent:
             # Case 1
             if (state["done"]):
                 logger.info("Primer caso del Barry Action Expert: Done")
-                return {"osworld_action": "done"}
+                return {"osworld_action": ["DONE"]}
             
             # Case 2
 
             # Process the current instruction from the instruction list
-            feedback = state["reflection_action"]
-            action = self.action_expert.process_instruction(self.screenshot, feedback)
+            action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description)
             
             return {
                 "osworld_action": action
@@ -177,7 +176,7 @@ class BarryAgent:
             condition = state["reflection_planning"] != ""
             if condition: 
                 return {"next": "planning_expert"}
-            
+            logger.info("voy otra vez al action expert")
             return {"next": "action_expert"}
         
         def reflection_expert(state: State):
@@ -193,18 +192,23 @@ class BarryAgent:
                     - It was a minor error: {reflection_action: error and how to solve it}
                     - It was a major error: {reflection_planning: error and how to solve it}
             """
+            logger.info("evaluo si ha habido errores")
             successful = self.reflection_expert.evaluate_execution(self.screenshot)
 
             # case 1
             if successful:
+                logger.info("no ha habido errores \n")
                 is_last_instruction = self.reflection_expert.is_last_instruction()
                 if is_last_instruction:
+                    logger.info("Sí es la última instrucción")
                     return {
                         "reflection_planning": 'finish',
                         "reflection_action": ""
                     }
                 else:
+                    logger.infor("no es la última instrucción")
                     next_instruction = self.reflection_expert.get_next_instruction()
+                    logger.info(f"esta es la siguiente instrucción {next_instruction}")
                     self.action_expert.set_current_instruction(next_instruction)
                     return {
                         "reflection_planning": "",
@@ -212,15 +216,20 @@ class BarryAgent:
                     }
             
             # case 2
+            logger.info("SÍ ha habido errores \n")
             evaluated_error = self.reflection_expert.evaluate_error(self.screenshot)
+            logger.info(f"esta es la evaluación del error: {evaluated_error}")
             if evaluated_error.startswith("Minor:"):
+                new_instruction = self.reflection_expert.create_new_instruction()
+                self.action_expert.set_current_instruction(new_instruction)
+
                 return {
                     "reflection_action": evaluated_error,
                     "reflection_planning": ""
                 }
             else:
                 return {
-                    "refelction_action": "",
+                    "reflection_action": "",
                     "reflection_planning": evaluated_error
                 }
 
@@ -288,6 +297,8 @@ class BarryAgent:
         try:
             # Process the new screenshot and store it in the Perception Expert
             self._process_new_screenshot(obs)
+            width, height = self.screenshot.size
+            print(f"RESOLUTION: {width}x{height}")
             
             # Si es la primera iteración copiamos la tarea y la añadimos al historial
             if self.first_iteration:
@@ -315,7 +326,7 @@ class BarryAgent:
 
             if osworld_action_to_return:
                 logger.info(f"BarryAgent: Acción decidida por el agente: '{osworld_action_to_return}'")
-                return "esta es la siguiente acción", [osworld_action_to_return]
+                return "esta es la siguiente acción", osworld_action_to_return
             else:
                 logger.warning("BarryAgent: El grafo no produjo una acción de OSWorld válida en esta iteración.")
                 return "FAIL: No OSWorld action generated in this cycle.", ["FAIL"]

@@ -206,6 +206,11 @@ class ReflectionExpert:
         except Exception as e:
             logger.error(f"Error in finished_instructions_eval() of reflection_expert: {e}")
             raise 
+    
+    def create_new_instruction(self):
+        prompt = "taking into account the last evaluation respond only with the next instruction. don't add any comments."
+        response =self.chat.send_message(prompt)
+        return response.text
 
     def _print_history(self):
         for i in range(self.last_printed_index, len(self.chat.history)):
@@ -224,9 +229,11 @@ class ReflectionExpert:
         return final_response == "yes"
     
     def is_last_instruction(self):
+        logger.info(f"estas son las intrucciones que tiene guardadas el reflection_expert {self.instruction_list} y esta el indice actual {self.instruction_index}")
         return len(self.instruction_list) - 1 == self.instruction_index
     
     def get_next_instruction(self):
+        logger.info("doy la siguiente instrucción")
         self.instruction_index += 1
         return self.instruction_list[self.instruction_index]
     
