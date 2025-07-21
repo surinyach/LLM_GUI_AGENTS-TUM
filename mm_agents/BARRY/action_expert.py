@@ -182,7 +182,7 @@ class ActionExpert:
             action(str): pyautogui code that needs to be executed within osworld environment.
         """
         try:
-            logger.info("Voy a procesar la siguiente instrucción:" + self.current_instruction)
+            #logger.info("Voy a procesar la siguiente instrucción:" + self.current_instruction)
             prompt= PROMPT_STEP_1.format(
                 instruction=self.current_instruction
             )
@@ -213,8 +213,8 @@ class ActionExpert:
             raise
 
 if __name__ == "__main__":
-    logger.info("Probando el Action Expert")
-    logger.info("Process instruction:")
+    #logger.info("Probando el Action Expert")
+    #logger.info("Process instruction:")
     action_expert = ActionExpert()
 
     current_instruction="Open the browser"

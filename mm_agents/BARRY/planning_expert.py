@@ -172,7 +172,7 @@ class PlanningExpert:
         Returns:
             str: The first subtask from the newly generated list of subtasks.
         """
-        logger.info("Planning expert saves and decomposes main task.")
+        #logger.info("Planning expert saves and decomposes main task.")
 
         try:
             self.main_task = main_task
@@ -180,7 +180,7 @@ class PlanningExpert:
             response = self.chat.send_message([prompt, SOM])
             marker = "SUBTASK_LIST:"
             subtask_list = self._parse_subtask_response(response.text, marker)
-            logger.info(f"These are the subtasks created: {subtask_list}") 
+            #logger.info(f"These are the subtasks created: {subtask_list}") 
             
             self.current_subtask = subtask_list[0]
             return self.current_subtask
@@ -201,7 +201,7 @@ class PlanningExpert:
             bool: True if the LLM responds 'yes' (meaning there's *more* work to do),
                   False if the LLM responds 'no' (meaning this *is* the last task).
         """
-        logger.info("Querying LLM to check if this was the last task.")
+        #logger.info("Querying LLM to check if this was the last task.")
 
         try:
             prompt = IS_LAST_TASK_PROMPT_TEMPLATE.format(current_subtask=self.current_subtask, main_task = self.main_task)
@@ -210,7 +210,7 @@ class PlanningExpert:
             # Clean the LLM's response (remove whitespace, convert to lowercase)
             llm_response_text = self._parse_subtask_response(response.text, "RESPONSE:")
 
-            logger.info(f"LLM responded to 'is_last_task' with: '{llm_response_text}'")
+            #logger.info(f"LLM responded to 'is_last_task' with: '{llm_response_text}'")
             return llm_response_text[0] == 'yes'
         
         except Exception as e:
@@ -237,7 +237,7 @@ class PlanningExpert:
         Returns:
             None: This function updates the `self.subtask_list` in place.
         """
-        logger.info("Initiating subtask list re-evaluation.")
+        #logger.info("Initiating subtask list re-evaluation.")
         try:
             prompt = RETHINK_SUBTASK_PROMPT_TEMPLATE.format(
                 reflection_expert_feedback=reflection_expert_feedback,
@@ -249,7 +249,7 @@ class PlanningExpert:
             subtask_list = self._parse_subtask_response(response.text, marker )
             self.last_task_for_test = subtask_list[-1] # esto es solo para facilitar la prueba de casos en los test
             self.current_subtask = subtask_list[0]
-            logger.info(f"New subtask list received from LLM: {subtask_list}\n")
+            #logger.info(f"New subtask list received from LLM: {subtask_list}\n")
 
             return self.current_subtask
 
@@ -274,7 +274,7 @@ class PlanningExpert:
         Returns:
             str: A string containing the LLM-generated instructions for the subtask.
         """
-        logger.info("Decomposing the current subtask into instructions.")
+        #logger.info("Decomposing the current subtask into instructions.")
         try:
             
 
@@ -283,7 +283,7 @@ class PlanningExpert:
             )
 
             response = self.chat.send_message([prompt, SOM])
-            logger.info(f"Instructions created by LLM: {response.text}")
+            #logger.info(f"Instructions created by LLM: {response.text}")
             marker = "INSTRUCTION_LIST:"
             instruction_list = self._parse_subtask_response(response.text, marker)
             

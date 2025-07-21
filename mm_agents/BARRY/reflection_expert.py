@@ -201,7 +201,7 @@ class ReflectionExpert:
             self.instruction_list = instruction_list
             self.instruction_index = 0
             
-            logger.info(f"Subtask '{subtask}' and first instruction added to chat history.")
+            #logger.info(f"Subtask '{subtask}' and first instruction added to chat history.")
         
         except Exception as e:
             logger.error(f"Error in set_subtask_and_instructions() of reflection_expert: {e}")
@@ -232,12 +232,12 @@ class ReflectionExpert:
             main_task = main_task
         )
         
-        logger.info(f"Sending execution error details to LLM for reflection. Error: '{execution_error}'")
+        #logger.info(f"Sending execution error details to LLM for reflection. Error: '{execution_error}'")
 
         try:
             response = self.chat.send_message([prompt, SOM])
 
-            logger.info(f"LLM's error reflection feedback: {response.text}")
+            #logger.info(f"LLM's error reflection feedback: {response.text}")
             return response.text
 
         except Exception as e:
@@ -271,12 +271,12 @@ class ReflectionExpert:
                 action_expert_feedback=action_expert_feedback
             )
             
-            logger.info(f"Asking LLM to evaluate subtask completion based on feedback: '{action_expert_feedback}'")
+            #logger.info(f"Asking LLM to evaluate subtask completion based on feedback: '{action_expert_feedback}'")
 
             response = self.chat.send_message([prompt, SOM])
             
             llm_decision = response.text.strip()
-            logger.info(f"LLM's decision on subtask completion: '{llm_decision}'")
+            #logger.info(f"LLM's decision on subtask completion: '{llm_decision}'")
 
             return llm_decision
 
@@ -300,7 +300,7 @@ class ReflectionExpert:
     # def evaluate_execution(self, screenshot):
     #     prompt = EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
     #     response =self.chat.send_message([prompt, screenshot])
-    #     logger.info("este es el resultado de la evaluación: "+ response.text)
+    #     #logger.info("este es el resultado de la evaluación: "+ response.text)
     #     parts = response.text.split("RESPONSE:", 1)
     #     final_response = parts[1].strip()
 
@@ -309,21 +309,21 @@ class ReflectionExpert:
     def evaluate_execution(self, screenshot):
         prompt = FIRST_EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
         response = self.chat.send_message([screenshot, prompt])
-        # logger.info("Descripción de lo que se espera en pantalla tras ejecutar la instrucción: " + response.text)
+        # #logger.info("Descripción de lo que se espera en pantalla tras ejecutar la instrucción: " + response.text)
         response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
-        # logger.info("Descripción del elemento más importante y su estado: " + response.text)
+        # #logger.info("Descripción del elemento más importante y su estado: " + response.text)
         response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
         parts = response.text.split("RESPONSE:", 1)
         final_response = parts[1].strip()
-        logger.info("Se ha ejecutado la tarea correctamente? " + final_response)
+        #logger.info("Se ha ejecutado la tarea correctamente? " + final_response)
         return final_response == 'yes'
     
     def is_last_instruction(self):
-        logger.info(f"estas son las intrucciones que tiene guardadas el reflection_expert {self.instruction_list} y esta el indice actual {self.instruction_index}")
+        #logger.info(f"estas son las intrucciones que tiene guardadas el reflection_expert {self.instruction_list} y esta el indice actual {self.instruction_index}")
         return len(self.instruction_list) - 1 == self.instruction_index
     
     def get_next_instruction(self):
-        logger.info("doy la siguiente instrucción")
+        #logger.info("doy la siguiente instrucción")
         self.instruction_index += 1
         return self.instruction_list[self.instruction_index]
     
