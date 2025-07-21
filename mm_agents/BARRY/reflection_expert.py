@@ -18,6 +18,7 @@ and this is why i could't do it:
 {execution_error}
 
 Give me feedback on how to solve the errors.
+Think also if this step is necessary for the main task {main_task}
 I also pass you a screenshot 
 """
 
@@ -33,10 +34,79 @@ SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE = "This is the subtask: '{subtask}'"
 
 EVALUATE_EXECUTION_PROMPT = """
 I have executed this instruction: '{instruction}'.
-By what you see in my screen, do I have completed well?
+Based *solely* on the current screen capture provided, has the instruction been completed successfully?
+
+**Crucial Point:** This screen *is* the state *after* I executed the instruction. Therefore, you must evaluate the success by observing the *changes* or *absence* of elements that the instruction aimed to alter or remove.
+You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things.
+
+For example:
+* If the instruction was to "close the pop-up," and the pop-up is no longer visible on the screen, that indicates successful completion, not an error.
+* If the instruction was to "add a new folder," and a new folder is now visible, that indicates successful completion.
+* If the instruction was to "delete an item," and that item is no longer on the screen, that indicates successful completion.
+
+Reflect carefully on what the *intended outcome* of the instruction would look like on the screen *after* execution.
+
 Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, think step by step your thoughts. 
-2.  **Revised instruction:** After your reasoning, you MUST respond only respond 'yes' or 'no' to indicate if the instruction was completed successfully.
+1.  **Reasoning Process:** First, think step by step through your evaluation process, considering the instruction's goal and the current screen state.
+2.  **Revised instruction:** After your reasoning, you MUST respond only 'yes' or 'no' to indicate if the instruction was completed successfully based on the screen.
+
+The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
+
+Example of how the response should appear:
+RESPONSE: yes
+"""
+
+FIRST_EVALUATE_EXECUTION_PROMPT = """
+You are an expert on evaluating execution of actions in GUI environments.
+
+I have executed this instruction: {instruction}
+
+Task:
+
+The attached image shows the state after executing the instruction. 
+Reason which elements are important to analyze in order to determine if the instruction indicated before has been successfully solved.
+Reflect carefully on what the *intended outcome* of the instruction would look like on the screen *after* execution.
+
+Response:
+
+Description of the critical elements that need to be inspected to decide if the instruction has been acomplished. 
+Also add in the description in which is the expected state of every of these elements after the instruction has been correctly executed in the environment. 
+
+Example:
+If the instruction is to remove something, the current screen must not show the item to be a successful execution.
+"""
+
+SECOND_EVALUATE_EXECUTION_PROMPT="""
+You are an image analyzer expert.
+
+Task:
+
+Among all the descripted elements of the previous analysis, choose which are the most important ones. 
+Then analyze them in detail in the screen to see if it accomplishes the desired state.
+
+Response:
+
+Give the detailed description of the state of the most important elements.
+Then provide also a reasoning about if the state of the elements is the desired one after completing the instruction in the current screen of the environment showed in the screenshot. 
+"""
+
+THIRD_EVALUATE_EXECUTION_PROMPT="""
+Task:
+
+Taking into account the previous analysis, the expected state of the elements after executing the instruction and the state of the screen determine if the instruction has been correctly performed or not.
+
+Crucial point: The showed screen is the state after executing the instruction. Therefore, you must evaluate the success by observing the changes or absence of elements that the instruction aimed to alter or remove.
+You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things.
+
+For example:
+
+* If the instruction was to "close the pop-up," and the pop-up is no longer visible on the screen, that indicates successful completion, not an error.
+* If the instruction was to "add a new folder," and a new folder is now visible, that indicates successful completion.
+* If the instruction was to "delete an item," and that item is no longer on the screen, that indicates successful completion.
+
+Response:
+
+You MUST respond only 'yes' or 'no' to indicate if the instruction was completed successfully based on the screen.
 The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
 
 Example of how the response should appear:
@@ -44,19 +114,25 @@ RESPONSE: yes
 """
 
 EVALUATE_ERROR_PROMPT = """
-Tell me if the last error is a major or minor error. This is how you can classify an error:
+Tell me if the last error is a major or minor error. 
+Also take into account that when searching in a browser the first links usually are patrocinated and we are not intereseted in them.
+Think about what you are looking for and see if the first link makes sense.
+Think also if this step is necessary for the main task {main_task}
+This is how you can classify an error:
 
-Minor: The instruction can still be completed in the current state of the screen. For example:
- - the action agent has clicked the wrong button but with the current screen it is still possible to click the right button
- - It has been typed the wrong word but you can still deleted and write the correct one
+Minor: The instruction can still be completed in the current state of the screen with ONLY ONE INSTRUCTION, if more than one instruction is need it then It is a MAJOR!! For example:
+ - the action agent has clicked the wrong button but with the current screen it is still possible to click the right button (only one instruction)
+ - It has been typed the wrong word but you can still deleted and write the correct one (it is only one instruction)
  - The action expert couldn't click the right coordintates to move the slider but you can help him to aim better given the current position of the cursor.
+ - The action expert had to click a link but it is needed to scroll down to be able to see the link
 
 Major: The instruction can not be completed anymore with the current state of the screen. For example:
  - The action expert clicked a button and the wrong page appeared.
  - The action expert tried to type on a search bar but the screen does not have a search bar
  - The action expert tried to click an icon that does not exist
 
-You only have 3 chances in a row to solve the same minor error. If it keeps failing it is now a major error.
+You only have 2 chances in a row to solve the same minor error. If it keeps failing it is now a major error.
+Think if scrolling is needed to find what you are looking for
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:** First, think step by step your thoughts. 
@@ -132,7 +208,7 @@ class ReflectionExpert:
             raise
 
     
-    def execution_error_reflection(self, execution_error: str, action_expert_feedback: str, SOM: any) -> str:
+    def execution_error_reflection(self, execution_error: str, action_expert_feedback: str, main_task, SOM: any) -> str:
         """
         Facilitates reflection on an execution error by querying an LLM for feedback.
 
@@ -152,7 +228,8 @@ class ReflectionExpert:
         """
         prompt = EXECUTION_ERROR_REFLECTION_PROMPT_TEMPLATE.format(
             action_expert_feedback=action_expert_feedback,
-            execution_error=execution_error
+            execution_error=execution_error,
+            main_task = main_task
         )
         
         logger.info(f"Sending execution error details to LLM for reflection. Error: '{execution_error}'")
@@ -220,13 +297,26 @@ class ReflectionExpert:
         
         self.last_printed_index = len(self.chat.history)
     
+    # def evaluate_execution(self, screenshot):
+    #     prompt = EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+    #     response =self.chat.send_message([prompt, screenshot])
+    #     logger.info("este es el resultado de la evaluación: "+ response.text)
+    #     parts = response.text.split("RESPONSE:", 1)
+    #     final_response = parts[1].strip()
+
+    #     return final_response == "yes"
+
     def evaluate_execution(self, screenshot):
-        prompt = EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
-        response =self.chat.send_message([prompt, screenshot])
+        prompt = FIRST_EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+        response = self.chat.send_message([screenshot, prompt])
+        # logger.info("Descripción de lo que se espera en pantalla tras ejecutar la instrucción: " + response.text)
+        response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
+        # logger.info("Descripción del elemento más importante y su estado: " + response.text)
+        response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
         parts = response.text.split("RESPONSE:", 1)
         final_response = parts[1].strip()
-
-        return final_response == "yes"
+        logger.info("Se ha ejecutado la tarea correctamente? " + final_response)
+        return final_response == 'yes'
     
     def is_last_instruction(self):
         logger.info(f"estas son las intrucciones que tiene guardadas el reflection_expert {self.instruction_list} y esta el indice actual {self.instruction_index}")
@@ -237,8 +327,8 @@ class ReflectionExpert:
         self.instruction_index += 1
         return self.instruction_list[self.instruction_index]
     
-    def evaluate_error(self, screenshot):
-        prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+    def evaluate_error(self, main_task, screenshot):
+        prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index], main_task = main_task)
         response =self.chat.send_message([prompt, screenshot])
         parts = response.text.split("RESPONSE:", 1)
         final_response = parts[1].strip()

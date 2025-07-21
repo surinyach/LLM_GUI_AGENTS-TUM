@@ -17,34 +17,44 @@ Then when you have to give the instructions for the SUBTASK you can say click on
 Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing subtask or instructions
 that consist on doing a screenshot, locating an element or recording coordinates. Don't add a last subtask that says finish the task.
 It has to be a meaningful subtask.
+The agent can press a combination of keys at the same time so don't put them in different subtask. The same with clicking and typing. 
+If the window is not fully open add maximizing the window in the first task. If the window is already maximized DO NOT maximize it again and DO NOT MAKE SHURE to open it, do it ONLY if is way smaller than the full window.
+Take into account that llms are not very good finding difficult regions that doesn't have text or buttons like an empty bookmark bar
+DO NOT make instructions to release the click!!! it is not necessary, the action expert is not able to solve this type of instructions.
+
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:** First, think step-by-step about how to break down the main task. Consider the actions involved and ensure each subtask is actionable but not overly granular. Write down your thought process here.
-2.  **Final Subtasks:** After your reasoning, you MUST provide the final list of subtasks. This list MUST start with the exact phrase "SUBTASK_LIST:" on its own line, followed immediately by the subtasks.
-    All text from "SUBTASK_LIST:" until the end of your response will be considered the list of subtasks. Each subtask should be separated by a semicolon ';'.
+2.  **Final Subtasks:** After your reasoning, you MUST provide the final list of subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks.
+    All text from "RESPONSE:" until the end of your response will be considered the list of subtasks. Each subtask should be separated by a semicolon ';'.
 
 Example of how the subtask list should appear:
-SUBTASK_LIST: Open the browser; Search for "example" on Google; Do something; Finish task.
+RESPONSE: Open the browser; Search for "example" on Google; Do something; Finish task.
 """
 
 RETHINK_SUBTASK_PROMPT_TEMPLATE = """
-Rethink the subtask list. This might be due to an issue: 
+Rethink the subtask list. You MUST FORGET the previous subtask list you made. This re-evaluation is necessary either because:
 
+A) There's an issue with the current approach, as highlighted by this feedback:
 {reflection_expert_feedback}
 
-or if there is no issue is because I've finished the current subtask: "{current_subtask}" and i want to know the rest of subtask that I have to do.
+OR
 
-Take into account this feedback and my past actions/messages.
-I am also providing you with the current state of my screen.
+B) I have successfully finished the current subtask: "{current_subtask}", and I need to know the remaining steps to complete the main task.
 
+Take into account the above reason (A or B), my past actions and messages, and the current state of my screen. 
+Think if the current task solved solves the main task and there is no need to do more tasks.
+If there was a problem (you can know this if there is feedback) think about alternative ways the main task could be solved. DON'T TRY TO DO THE SAME STEPS!!!** Consider different perspectives, workflows, or how similar problems are handled in other environments.
+This is vital to avoid retrying solutions that have repeatedly failed. You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things so if there is a hot key combination which would do it easier or faster use that option.
+If you don't know what to do try a different approach or a different way. Re do the subtasks for the main task with the new approach.
 Now, provide a revised subtask list with what is still left to do to accomplish the main task: {main_task}.
 
 Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. Think step-by-step about why the subtask list needs rethinking (if an issue was raised) or what the next logical steps are (if the current subtask is finished). Based on this, formulate the revised list of remaining subtasks. Write down your thought process here.
-2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of remaining subtasks. This list MUST start with the exact phrase "SUBTASK_LIST:" on its own line, followed immediately by the subtasks. All text from "SUBTASK_LIST:" until the end of your response will be considered the revised list of subtasks. Each subtask should be separated by a semicolon ';'.
+1.  **Reasoning Process:** First, analyze the provided feedback (if any), your past actions, and the current screen state. Determine whether the re-evaluation is due to an issue or a completed subtask. Think step-by-step about why the subtask list needs rethinking (if an issue was raised, considering alternatives), or what the next logical steps are (if the current subtask is finished). Based on this, formulate the revised list of remaining subtasks. Write down your comprehensive thought process here.
+2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of remaining subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks. All text from "RESPONSE:" until the end of your response will be considered the revised list of subtasks. Each subtask should be separated by a semicolon ';'.
 
 Example of how the revised subtask list should appear:
-SUBTASK_LIST: Select the "Images" tab; Choose a dog image; Download the image; Close the browser.
+RESPONSE: Select the "Images" tab; Choose a dog image; Download the image
 """
 
 DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
@@ -53,6 +63,7 @@ and a summary of actions already performed (if described in previous messages),
 decompose the following specific subtask into a series of detailed steps or instructions.
 Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing instructions
 that consist on doing a screenshot, locating an element or recording coordinates.
+If some steps can be done together like clicking, selecting the text with ctrl + A and typing put it all in the same instruction.
 The answer should only contain the steps, don't add any comments.
 {current_subtask}.
 
@@ -61,21 +72,32 @@ However think that this steps will have to be translated into pyAutoGUI actions 
 move the mouse to th icon. As in pyAutoGUI you give the coordinates when you click.
 Please provide the decomposed steps as a clear list or sequence. 
 
+If there is something that could be ambiguous specifiy it. Like if there are 2 searchbars specify which one.
+
 Here's how I want you to structure your response:
 1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. 
 Think step-by-step about why the instruction list needs rethinking (if an issue was raised) or what the next logical steps are. 
 Based on this, formulate the instruction list for the current subtask. Write down your thought process here.
-2.  **Revised Instruction List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "INSTRUCTION_LIST:" on its own line, followed immediately by the instructions. 
-All text from "INSTRUCTION_LIST:" until the end of your response will be considered the revised list of instructions. Each instruction should be separated by a semicolon ';'.
+2.  **Revised Instruction List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the instructions. 
+All text from "RESPONSE:" until the end of your response will be considered the revised list of instructions. Each instruction should be separated by a semicolon ';'.
 
 Example of how the revised subtask list should appear:
-INSTRUCTION_LIST: Click on the browser icon; Click on the search bar; Type dogs.
+RESPONSE: Click on the browser icon; Click on the search bar; Type dogs.
 """
 
 IS_LAST_TASK_PROMPT_TEMPLATE = """
 I correctly finished this subtask: {current_subtask}. This is the main task: {main_task}
 Taking into account the subtask list you gave me is the main task done?
 Take into account your last task decomposition into subtask. Respond only with 'yes' or 'no'.
+
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. 
+Think step-by-step about why the instruction list needs rethinking (if an issue was raised) or what the next logical steps are. 
+Based on this, formulate the instruction list for the current subtask. Write down your thought process here.
+2.  **Final answer:** After your reasoning, you MUST respond with 'RESPONSE:' followed only with a 'yes' or 'no'
+Example: 
+RESPONSE:yes
+
 """
 
 
@@ -121,7 +143,7 @@ class PlanningExpert:
         if not response_text:
             return []
         print("text to parse: ", response_text)
-        parts = response_text.split(marker, 1) # Use 1 to split only on the first occurrence
+        parts = response_text.split("RESPONSE:", 1) # Use 1 to split only on the first occurrence
 
         if len(parts) < 2:
             print(f"Warning: Marker '{marker}' not found in the response.")
@@ -186,10 +208,10 @@ class PlanningExpert:
             response = self.chat.send_message([prompt, SOM])
             
             # Clean the LLM's response (remove whitespace, convert to lowercase)
-            llm_response_text = response.text.strip().lower()
+            llm_response_text = self._parse_subtask_response(response.text, "RESPONSE:")
 
             logger.info(f"LLM responded to 'is_last_task' with: '{llm_response_text}'")
-            return llm_response_text == 'yes'
+            return llm_response_text[0] == 'yes'
         
         except Exception as e:
             logger.error(f"Error in is_last_task() of planning_expert: {e}")

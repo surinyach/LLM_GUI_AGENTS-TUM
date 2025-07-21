@@ -49,7 +49,7 @@ class BarryAgent:
         
         # Historial para el agente
         self.trajectory_length = 0
-        self.max_trajectory_length = 50
+        self.max_trajectory_length = 20
         self.call_user_count = 0
         self.call_user_tolerance = 3
         
@@ -206,7 +206,7 @@ class BarryAgent:
                         "reflection_action": ""
                     }
                 else:
-                    logger.infor("no es la última instrucción")
+                    logger.info("no es la última instrucción")
                     next_instruction = self.reflection_expert.get_next_instruction()
                     logger.info(f"esta es la siguiente instrucción {next_instruction}")
                     self.action_expert.set_current_instruction(next_instruction)
@@ -217,7 +217,7 @@ class BarryAgent:
             
             # case 2
             logger.info("SÍ ha habido errores \n")
-            evaluated_error = self.reflection_expert.evaluate_error(self.screenshot)
+            evaluated_error = self.reflection_expert.evaluate_error(self.screenshot, self.main_task)
             logger.info(f"esta es la evaluación del error: {evaluated_error}")
             if evaluated_error.startswith("Minor:"):
                 new_instruction = self.reflection_expert.create_new_instruction()

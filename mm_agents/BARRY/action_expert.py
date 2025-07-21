@@ -45,7 +45,7 @@ and this is my screen right now. What should I do?
 """
 
 PROMPT_STEP_2 = """
-This is the set of mark of my screen. For each element relationed with the instruction tell me:
+This is the set of mark of my screen. For each element related with the instruction tell me:
 1. The number of the box they are encapsulated in
 2. What is this element.
 3. What is its function.
@@ -56,7 +56,7 @@ The numbers of the boxes are random!!! so it is very unlikely that the chosen bo
 
 the sliders are not encapusalated in a whole box, only its interactable element. This interactable element usually has a wrong description
 
-Select at least 5 elements that are close and could be raltionated with the instruction topic so you can examine them and compare them later
+Select at least 5 elements that are close and could be raltionated with the instruction topic so you can examine them and compare them later.
 """
 
 PROMPT_STEP_3 = """
@@ -137,7 +137,6 @@ class ActionExpert:
         """
         if not response_text:
             return []
-        print("text to parse: ", response_text)
         parts = response_text.split(marker, 1) # Use 1 to split only on the first occurrence
 
         if len(parts) < 2:
@@ -206,7 +205,6 @@ class ActionExpert:
 
             prompt= PROMPT_STEP_5
             response = self.chat.send_message(prompt)
-            self._print_history()
             actions = self._parse_subtask_response(response.text, "RESPONSE:")
             return actions
 
