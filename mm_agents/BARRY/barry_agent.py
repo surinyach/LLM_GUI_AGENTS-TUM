@@ -86,13 +86,13 @@ class BarryAgent:
         # NODES -----------------------------------------------
 
         def start_router(state: State):
-            #logger.info("estoy en el start_router")
+            #logger"estoy en el start_router")
 
             if self.first_iteration:
-                #logger.info("me voy al planning expert")
+                #logger"me voy al planning expert")
                 return {"next": "planning_expert"}
                 
-            #logger.info("me voy al reflection expert")
+            #logger"me voy al reflection expert")
             return {"next": "reflection_expert"}
         
         def planning_expert(state: State):
@@ -121,8 +121,9 @@ class BarryAgent:
             """
             # case 1
             if self.first_iteration:
-                #logger.info("nodo planning expert: primera iteración")
                 subtask = self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
+                #loggerf"The planning expert decomposes the main task. This is the first subtask: {subtask}")
+
                 self.first_iteration = False
 
             # case 2
@@ -139,6 +140,8 @@ class BarryAgent:
 
             # This has to be done after every case:
             instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
+            #loggerf"These are the instructions for the task: {instruction_list}")
+
 
 
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
@@ -160,13 +163,14 @@ class BarryAgent:
 
             # Case 1
             if (state["done"]):
-                #logger.info("Primer caso del Barry Action Expert: Done")
+                ##logger"Primer caso del Barry Action Expert: Done")
                 return {"osworld_action": ["DONE"]}
             
             # Case 2
 
             # Process the current instruction from the instruction list
             action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description)
+            
             
             return {
                 "osworld_action": action
@@ -176,7 +180,7 @@ class BarryAgent:
             condition = state["reflection_planning"] != ""
             if condition: 
                 return {"next": "planning_expert"}
-            #logger.info("voy otra vez al action expert")
+            #logger"voy otra vez al action expert")
             return {"next": "action_expert"}
         
         def reflection_expert(state: State):
@@ -192,23 +196,23 @@ class BarryAgent:
                     - It was a minor error: {reflection_action: error and how to solve it}
                     - It was a major error: {reflection_planning: error and how to solve it}
             """
-            #logger.info("evaluo si ha habido errores")
+            #logger"evaluo si ha habido errores")
             successful = self.reflection_expert.evaluate_execution(self.screenshot)
 
             # case 1
             if successful:
-                #logger.info("no ha habido errores \n")
+                #logger"no ha habido errores \n")
                 is_last_instruction = self.reflection_expert.is_last_instruction()
                 if is_last_instruction:
-                    #logger.info("Sí es la última instrucción")
+                    #logger"Sí es la última instrucción")
                     return {
                         "reflection_planning": 'finish',
                         "reflection_action": ""
                     }
                 else:
-                    #logger.info("no es la última instrucción")
+                    #logger"no es la última instrucción")
                     next_instruction = self.reflection_expert.get_next_instruction()
-                    #logger.info(f"esta es la siguiente instrucción {next_instruction}")
+                    #loggerf"esta es la siguiente instrucción {next_instruction}")
                     self.action_expert.set_current_instruction(next_instruction)
                     return {
                         "reflection_planning": "",
@@ -216,9 +220,9 @@ class BarryAgent:
                     }
             
             # case 2
-            #logger.info("SÍ ha habido errores \n")
+            #logger"SÍ ha habido errores \n")
             evaluated_error = self.reflection_expert.evaluate_error(self.screenshot, self.main_task)
-            #logger.info(f"esta es la evaluación del error: {evaluated_error}")
+            #loggerf"esta es la evaluación del error: {evaluated_error}")
             if evaluated_error.startswith("Minor:"):
                 new_instruction = self.reflection_expert.create_new_instruction()
                 self.action_expert.set_current_instruction(new_instruction)
@@ -287,7 +291,7 @@ class BarryAgent:
         """
         Sends the screenshot and the instruction to the Agent in order to generate pyautogui actions.
         """
-        #logger.info("Predict de barry agent")
+        #logger"Predict de barry agent")
         self.trajectory_length += 1
         
         if self.trajectory_length > self.max_trajectory_length:
@@ -321,11 +325,11 @@ class BarryAgent:
             is_done = final_state.get("done", False)
 
             if is_done and osworld_action_to_return == "done": # doble comprobación aun que con una ya sería suficiente
-                #logger.info("BarryAgent: Tarea finalizada con éxito.")
+                #logger"BarryAgent: Tarea finalizada con éxito.")
                 return "se acabo lo que se daba", ["DONE"]
 
             if osworld_action_to_return:
-                #logger.info(f"BarryAgent: Acción decidida por el agente: '{osworld_action_to_return}'")
+                #loggerf"BarryAgent: Acción decidida por el agente: '{osworld_action_to_return}'")
                 return "esta es la siguiente acción", osworld_action_to_return
             else:
                 logger.warning("BarryAgent: El grafo no produjo una acción de OSWorld válida en esta iteración.")
@@ -344,7 +348,7 @@ class BarryAgent:
         self.trajectory_length = 0
         self.call_user_count = 0
         self.first_iteration = True
-        #logger.info("Agente reiniciado")
+        #logger"Agente reiniciado")
 
 
 

@@ -29,7 +29,7 @@ Here's how I want you to structure your response:
     All text from "RESPONSE:" until the end of your response will be considered the list of subtasks. Each subtask should be separated by a semicolon ';'.
 
 Example of how the subtask list should appear:
-RESPONSE: Open the browser; Search for "example" on Google; Do something; Finish task.
+RESPONSE: Open the browser; Search for "example" on Google; Do something.
 """
 
 RETHINK_SUBTASK_PROMPT_TEMPLATE = """
@@ -43,6 +43,7 @@ OR
 B) I have successfully finished the current subtask: "{current_subtask}", and I need to know the remaining steps to complete the main task.
 
 Take into account the above reason (A or B), my past actions and messages, and the current state of my screen. 
+Think about the consequences of each task, for example if you close the tab and it is the only tab the window will close
 Think if the current task solved solves the main task and there is no need to do more tasks.
 If there was a problem (you can know this if there is feedback) think about alternative ways the main task could be solved. DON'T TRY TO DO THE SAME STEPS!!!** Consider different perspectives, workflows, or how similar problems are handled in other environments.
 This is vital to avoid retrying solutions that have repeatedly failed. You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things so if there is a hot key combination which would do it easier or faster use that option.
@@ -61,6 +62,7 @@ DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
 Taking into account any feedback provided in the previous message (if there was)
 and a summary of actions already performed (if described in previous messages),
 decompose the following specific subtask into a series of detailed steps or instructions.
+Think if any task or instruction can be achieve by using a combination of hot keys. This is VERY IMPORTANT because this llm is bad at reconising elements that don't contain text so hotkeys are perfect
 Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing instructions
 that consist on doing a screenshot, locating an element or recording coordinates.
 If some steps can be done together like clicking, selecting the text with ctrl + A and typing put it all in the same instruction.
@@ -142,7 +144,6 @@ class PlanningExpert:
         """
         if not response_text:
             return []
-        print("text to parse: ", response_text)
         parts = response_text.split("RESPONSE:", 1) # Use 1 to split only on the first occurrence
 
         if len(parts) < 2:
@@ -180,6 +181,8 @@ class PlanningExpert:
             response = self.chat.send_message([prompt, SOM])
             marker = "SUBTASK_LIST:"
             subtask_list = self._parse_subtask_response(response.text, marker)
+            logger.info(f"this are the subtsk created by the planning expert: {subtask_list}")
+
             #logger.info(f"These are the subtasks created: {subtask_list}") 
             
             self.current_subtask = subtask_list[0]
@@ -286,6 +289,7 @@ class PlanningExpert:
             #logger.info(f"Instructions created by LLM: {response.text}")
             marker = "INSTRUCTION_LIST:"
             instruction_list = self._parse_subtask_response(response.text, marker)
+            logger.info(f"These are the instructions for the first task: {instruction_list}")
             
             return instruction_list
         

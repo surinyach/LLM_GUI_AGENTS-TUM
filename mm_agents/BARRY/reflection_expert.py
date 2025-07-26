@@ -97,6 +97,7 @@ Taking into account the previous analysis, the expected state of the elements af
 
 Crucial point: The showed screen is the state after executing the instruction. Therefore, you must evaluate the success by observing the changes or absence of elements that the instruction aimed to alter or remove.
 You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things.
+IMPORTANT: If you have done an action that must work like pressing ctrl + shift + b, the execution will be always successful, you just have to take into account that if there is no text you won't be able to see it but you have to act s if it was there.
 
 For example:
 
@@ -300,7 +301,7 @@ class ReflectionExpert:
     # def evaluate_execution(self, screenshot):
     #     prompt = EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
     #     response =self.chat.send_message([prompt, screenshot])
-    #     #logger.info("este es el resultado de la evaluación: "+ response.text)
+    #     logger.info("este es el resultado de la evaluación: "+ response.text)
     #     parts = response.text.split("RESPONSE:", 1)
     #     final_response = parts[1].strip()
 
@@ -309,13 +310,13 @@ class ReflectionExpert:
     def evaluate_execution(self, screenshot):
         prompt = FIRST_EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
         response = self.chat.send_message([screenshot, prompt])
-        # #logger.info("Descripción de lo que se espera en pantalla tras ejecutar la instrucción: " + response.text)
+        # logger.info("Descripción de lo que se espera en pantalla tras ejecutar la instrucción: " + response.text)
         response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
-        # #logger.info("Descripción del elemento más importante y su estado: " + response.text)
+        # logger.info("Descripción del elemento más importante y su estado: " + response.text)
         response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
         parts = response.text.split("RESPONSE:", 1)
         final_response = parts[1].strip()
-        #logger.info("Se ha ejecutado la tarea correctamente? " + final_response)
+        logger.info("Did the execution went well? " + final_response)
         return final_response == 'yes'
     
     def is_last_instruction(self):
@@ -330,6 +331,7 @@ class ReflectionExpert:
     def evaluate_error(self, main_task, screenshot):
         prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index], main_task = main_task)
         response =self.chat.send_message([prompt, screenshot])
+        logger.info("This is the response of the reflection expert: " + response.text)
         parts = response.text.split("RESPONSE:", 1)
         final_response = parts[1].strip()
 
