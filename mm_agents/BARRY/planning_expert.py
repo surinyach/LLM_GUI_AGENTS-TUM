@@ -1,10 +1,10 @@
 import os
 import logging
-from typing import List, Tuple
 from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
-import re
+from .utils import parse_llm_response
+
 
 logger = logging.getLogger("planning_expert")
 
@@ -106,13 +106,13 @@ RESPONSE:yes
 class PlanningExpert:
     def __init__(self, model_id: str = "gemini-2.0-flash"):
         """
-        Inicializa el experto en reflection.
+        Initialitation of the Planning Expert
         """
         load_dotenv()
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         if not gemini_api_key:
-            logger.error("GEMINI_API_KEY no encontrada en el archivo .env para ActionExpert")
-            raise ValueError("GEMINI_API_KEY no encontrada en el archivo .env")
+            logger.error("GEMINI_API_KEY not found in the file .env for Planning Expert")
+            raise ValueError("GEMINI_API_KEY not found in the file .env")
         
         genai.configure(api_key=gemini_api_key)
         self.model = genai.GenerativeModel(model_id)
@@ -123,68 +123,43 @@ class PlanningExpert:
 
         self.main_task = ""
         self.current_subtask = ""
-        # self.instruction_list = ""
-        # self.subtask_list = []
-        # self.current_subtask_index = 0
 
-        self.first_iter = True
-
-
-    def _parse_subtask_response(self, response_text: str, marker) -> List[str]:
-        """
-        Parses the raw text response from the LLM, by splitting on "SUBTASK_LIST:"
-        and taking the latter part. Assumes subtasks are separated by ';'.
-
-        Args:
-            response_text (str): The full string response from the LLM.
-
-        Returns:
-            List[str]: A list containing each parsed subtask.
-                       Returns an empty list if the marker is not found or no subtasks are present.
-        """
-        if not response_text:
-            return []
-        parts = response_text.split("RESPONSE:", 1) # Use 1 to split only on the first occurrence
-
-        if len(parts) < 2:
-            print(f"Warning: Marker '{marker}' not found in the response.")
-            return []
-
-        # Grab the part after the marker and strip leading/trailing whitespace (including newlines)
-        subtasks_raw_string = parts[1].strip()
-
-        # Split by semicolon and clean each individual task.
-        subtasks = [task.strip() for task in subtasks_raw_string.split(';') if task.strip()]
-        return subtasks
-
+        self.first_iter = True    
     
-    
-    def decompose_main_task(self, main_task, SOM):
+    def decompose_main_task(self, main_task, screenshot):
         """
         Receives the main task and uses an LLM to generate a list of subtasks.
 
-        The LLM is prompted to decompose the main task into individual subtasks,
-        separated by semicolons. This function then parses the LLM's response
-        and stores the resulting subtasks.
+        This function initiates the planning phase by instructing a language model (LLM)
+        to break down a high-level `main_task` into smaller, manageable subtasks.
+        The LLM is specifically prompted to provide these subtasks separated by semicolons.
+        The `main_task` and the screenshot representing the current GUI
+        state are sent to the LLM to provide necessary context for decomposition.
+        The LLM's raw text response is then parsed into a list of individual subtasks.
+        The first generated subtask is stored as `self.current_subtask` and is also
+        returned as the initial subtask for subsequent action or execution.
 
         Args:
-            main_task (str): The primary objective of the osworld test, provided as a string.
+            main_task (str): The primary objective or high-level goal that needs to be decomposed.
+            screenshot: screenshot of the current GUI environment. This provides visual and 
+            interactive context to the LLM during the task decomposition process.
 
         Returns:
             str: The first subtask from the newly generated list of subtasks.
         """
-        #logger.info("Planning expert saves and decomposes main task.")
 
         try:
             self.main_task = main_task
             prompt = DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE.format(main_task=main_task)
-            response = self.chat.send_message([prompt, SOM])
-            marker = "SUBTASK_LIST:"
-            subtask_list = self._parse_subtask_response(response.text, marker)
-            logger.info(f"this are the subtsk created by the planning expert: {subtask_list}")
+            response = self.chat.send_message([prompt, screenshot])
 
-            #logger.info(f"These are the subtasks created: {subtask_list}") 
+            subtasks_raw_string = parse_llm_response(response.text)
             
+            # Split by semicolon and clean each individual task.
+            subtask_list = [task.strip() for task in subtasks_raw_string.split(';') if task.strip()]
+        
+            logger.info(f"These are the subtasks created by the planning expert: {subtask_list}")
+
             self.current_subtask = subtask_list[0]
             return self.current_subtask
     
@@ -192,67 +167,78 @@ class PlanningExpert:
             logger.error(f"Error in decompose_main_task() of planning_expert: {e}")
             raise
     
-    def main_task_done(self, SOM) -> bool:
+    def is_main_task_done(self, screenshot) -> bool:
         """
-        Determines if the main task is complete by querying an LLM.
+        Determines if the main task is complete by querying a language model (LLM).
 
-        This function informs the LLM that the current subtask has been completed
-        and asks if any further work is needed. It specifically expects a 'yes' or 'no'
-        response from the LLM.
-
-        Returns:
-            bool: True if the LLM responds 'yes' (meaning there's *more* work to do),
-                  False if the LLM responds 'no' (meaning this *is* the last task).
-        """
-        #logger.info("Querying LLM to check if this was the last task.")
-
-        try:
-            prompt = IS_LAST_TASK_PROMPT_TEMPLATE.format(current_subtask=self.current_subtask, main_task = self.main_task)
-            response = self.chat.send_message([prompt, SOM])
-            
-            # Clean the LLM's response (remove whitespace, convert to lowercase)
-            llm_response_text = self._parse_subtask_response(response.text, "RESPONSE:")
-
-            #logger.info(f"LLM responded to 'is_last_task' with: '{llm_response_text}'")
-            return llm_response_text[0] == 'yes'
-        
-        except Exception as e:
-            logger.error(f"Error in is_last_task() of planning_expert: {e}")
-            raise
-
-    def rethink_subtask_list(self, reflection_expert_feedback: str, SOM) -> None:
-        """
-        Revises the current list of subtasks based on feedback and current progress.
-
-        This function is invoked when a re-evaluation of the subtask plan is necessary,
-        either due to an execution error, incomplete reflection, or successful completion
-        of a subtask. It communicates with an LLM, providing it with feedback,
-        the completed subtask (if any), past actions, the overall main task,
-        and the current screen state (SOM). The LLM generates a new, updated
-        list of subtasks.
+        This function queries the LLM to assess if the entire `main_task` has reached completion,
+        following the execution of `self.current_subtask`. It constructs a prompt using the
+        `IS_LAST_TASK_PROMPT_TEMPLATE`, providing context with the `current_subtask`, `main_task`,
+        and a `screenshot` of the current GUI state. The LLM is expected to respond with a
+        definitive 'yes' (the main task is completed) or 'no' (there is still more work to do).
 
         Args:
-            reflection_expert_feedback (str): Feedback from the reflection expert, indicating any issues.
-                                              It can be an empty string if the instruction list was correctly complete.
-            action_expert_feedback (str): A summary of the actions taken during the execution of the previous instruction list.
-            SOM (any): The Set of mark (SOM) or current screen representation, providing context to the LLM.
+            self: The instance of the class, expected to have `current_subtask`, `main_task`,
+                  and a `chat` object for LLM interaction.
+            screenshot: The image of the current GUI environment, providing visual context to the LLM.
 
         Returns:
-            None: This function updates the `self.subtask_list` in place.
+            bool: True if the LLM responds 'yes' (meaning this *is* the last task and no more work is needed),
+                  False if the LLM responds 'no' (meaning there's *more* work to do)
         """
-        #logger.info("Initiating subtask list re-evaluation.")
+        try:
+            prompt = IS_LAST_TASK_PROMPT_TEMPLATE.format(current_subtask=self.current_subtask, main_task = self.main_task)
+            response = self.chat.send_message([prompt, screenshot])
+            
+            llm_response_text = parse_llm_response(response.text)
+
+            return llm_response_text[0].lower() == 'yes'
+        
+        except Exception as e:
+            logger.error(f"Error in is_main_task_done() of planning_expert: {e}")
+            raise
+
+    def rethink_subtask_list(self, reflection_expert_feedback: str, screenshot) -> None:
+        """
+        Revises the current planning of subtasks based on feedback and the current GUI state.
+
+        This function is invoked when a re-evaluation of the subtask plan is necessary,
+        for instance, due to an execution error, or after the successful completion of a previous subtask. 
+        It constructs a prompt for a language model (LLM), providing it with `reflection_expert_feedback`, 
+        the `self.current_subtask` just processed, the overall `self.main_task`, and the current `screenshot`.
+        The LLM is tasked with generating a new, updated sequence of subtasks based on this comprehensive context.
+
+        The first subtask from this newly generated list is then set as
+        `self.current_subtask`, effectively updating the active task for the agent.
+
+        Args:
+            self: The instance of the class, providing access to `chat` for LLM interaction,
+                  and `main_task` and `current_subtask` for context.
+            reflection_expert_feedback (str): Feedback from the reflection expert. This
+                                              string can be empty if the previous instruction
+                                              list was completed successfully, or it can
+                                              contain details about issues encountered.
+            screenshot: The current image of the GUI environment, providing visual context
+                        to the LLM for rethinking the plan.
+
+        Returns:
+            str: The first subtask from the newly generated list of subtasks, which
+                 becomes the new `self.current_subtask`.
+        """
         try:
             prompt = RETHINK_SUBTASK_PROMPT_TEMPLATE.format(
                 reflection_expert_feedback=reflection_expert_feedback,
                 current_subtask=self.current_subtask,
                 main_task=self.main_task
             )
-            response = self.chat.send_message([prompt, SOM])
-            marker = "SUBTASK_LIST:"
-            subtask_list = self._parse_subtask_response(response.text, marker )
+            response = self.chat.send_message([prompt, screenshot])
+
+            subtask_list_str = parse_llm_response(response.text)
+            # Split by semicolon and clean each individual task.
+            subtask_list = [task.strip() for task in subtask_list_str.split(';') if task.strip()]
+
             self.last_task_for_test = subtask_list[-1] # esto es solo para facilitar la prueba de casos en los test
             self.current_subtask = subtask_list[0]
-            #logger.info(f"New subtask list received from LLM: {subtask_list}\n")
 
             return self.current_subtask
 
@@ -261,23 +247,28 @@ class PlanningExpert:
             logger.error(f"Error in rethink_subtask_list() of planning_expert: {e}")
             raise
     
-    def decompose_subtask(self, SOM) -> str:
+    def decompose_subtask(self, screenshot) -> str:
         """
         Decomposes the current active subtask into a detailed list of instructions/steps.
 
-        This function interacts with an LLM to break down the subtask, considering
-        any prior feedback, completed actions, the overall main task, and the
-        current screen state (SOM). It's designed to generate actionable steps
-        for the action expert.
+        This function expands a higher-level subtask into a granular sequence of executable
+        instructions. It communicates with a language model (LLM), providing it with the
+        `self.current_subtask` and a `screenshot` of the current GUI state as context.
+        The LLM is expected to generate a detailed plan of actions, formatted as a
+        semicolon-separated string of instructions. The function then parses this raw
+        response by splitting it into individual instructions, forming a list of actionable
+        steps suitable for an action execution expert.
 
         Args:
-            SOM (any): The State of Mind (SOM) or current screen representation,
-                       providing visual and contextual information to the LLM.
+            self: The instance of the class, providing access to the `chat` object for
+                  LLM interaction and the `current_subtask` which needs decomposition.
+            screenshot: The current image of the GUI environment, providing visual
+                        and contextual information to the LLM for accurate subtask decomposition.
 
         Returns:
-            str: A string containing the LLM-generated instructions for the subtask.
+            list[str]: A list of strings, where each string is a distinct LLM-generated
+                       instruction for carrying out the subtask.
         """
-        #logger.info("Decomposing the current subtask into instructions.")
         try:
             
 
@@ -285,11 +276,11 @@ class PlanningExpert:
                 current_subtask=self.current_subtask,
             )
 
-            response = self.chat.send_message([prompt, SOM])
-            #logger.info(f"Instructions created by LLM: {response.text}")
-            marker = "INSTRUCTION_LIST:"
-            instruction_list = self._parse_subtask_response(response.text, marker)
-            logger.info(f"These are the instructions for the first task: {instruction_list}")
+            response = self.chat.send_message([prompt, screenshot])
+
+            instruction_list_str = parse_llm_response(response.text)
+            instruction_list = [task.strip() for task in instruction_list_str.split(';') if task.strip()]
+            logger.info(f"These are the instructions for the task: {instruction_list}")
             
             return instruction_list
         
@@ -301,6 +292,24 @@ class PlanningExpert:
         self.current_subtask = self.last_task_for_test
     
     def _print_history(self):
+        """
+        Prints new messages from the chat history to the console since the last print.
+
+        This internal helper function iterates through the `chat.history` list, starting
+        from the `last_printed_index`. It prints each new message, formatted to show
+        its role (e.g., 'user', 'model') and the text content. After printing, it updates
+        `last_printed_index` to the current total number of messages in the history,
+        ensuring that only new messages are printed in subsequent calls.
+
+        Args:
+            self: The instance of the class, expected to have a `chat` object with a
+                `history` attribute (a list of message objects) and a `last_printed_index`
+                attribute (an integer tracking the last printed message's index).
+
+        Returns:
+            None: This function performs side effects by printing to standard output
+                and modifying `self.last_printed_index`.
+        """
         for i in range(self.last_printed_index, len(self.chat.history)):
             message = self.chat.history[i]
             text_content = message.parts[0].text 
@@ -340,7 +349,7 @@ if __name__ == "__main__":
     SOM = Image.open(image_path)
 
     print("caso 2.1: tarea no está acabada")
-    done = planning_expert.main_task_done(SOM)
+    done = planning_expert.is_main_task_done(SOM)
     if done:
         print("return {'done': True}")
     else:
@@ -379,7 +388,7 @@ if __name__ == "__main__":
 
     print("caso 2.2: tarea sí está acabada")
     planning_expert._set_current_task_as_last()
-    done = planning_expert.main_task_done(SOM)
+    done = planning_expert.is_main_task_done(SOM)
     if done:
         print("return {'done': True}")
     else:

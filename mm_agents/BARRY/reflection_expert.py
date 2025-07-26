@@ -3,6 +3,7 @@ import logging
 from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
+from .utils import parse_llm_response
 
 
 logger = logging.getLogger("reflection_expert")
@@ -120,25 +121,7 @@ class ReflectionExpert:
         
         self.last_printed_index = 0 # this is for printing the chat history for debugging
     
-    def _parse_llm_response_text(self, response_text: str) -> str:
-        """
-        Parses the text response from an LLM, expecting a "RESPONSE:" prefix.
-
-        This helper function extracts the relevant content from the LLM's response
-        by splitting it at the "RESPONSE:" delimiter and stripping any leading/trailing
-        whitespace. It raises a ValueError if the expected prefix is not found.
-
-        Args:
-            response_text (str): The raw text response received from the LLM.
-
-        Returns:
-            str: The extracted content after the "RESPONSE:" prefix.
-        """
-        parts = response_text.split("RESPONSE:", 1)
-        if len(parts) < 2:
-            raise ValueError(f"LLM response missing 'RESPONSE:' prefix: {response_text}")
-        
-        return parts[1].strip()
+    
 
     def set_subtask_and_instructions(self, subtask: str, instruction_list) -> None:
         """
@@ -223,7 +206,7 @@ class ReflectionExpert:
             response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
             response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
 
-            final_response = self._parse_llm_response_text(response.text)
+            final_response = parse_llm_response(response.text)
 
             logger.info("Did the execution went well? " + final_response)
 
@@ -302,7 +285,7 @@ class ReflectionExpert:
 
             logger.info("This is the response of the reflection expert: " + response.text)
 
-            final_response = self._parse_llm_response_text(response.text)
+            final_response = parse_llm_response(response.text)
             return final_response
         
         except Exception as e:
