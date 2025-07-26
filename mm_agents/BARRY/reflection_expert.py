@@ -1,6 +1,5 @@
 import os
 import logging
-from typing import List, Tuple
 from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
@@ -8,53 +7,8 @@ from PIL import Image
 
 logger = logging.getLogger("reflection_expert")
 
-EXECUTION_ERROR_REFLECTION_PROMPT_TEMPLATE = """
-I had a problem executing the task, this is what i did: 
-
-{action_expert_feedback} 
-
-and this is why i could't do it:
-
-{execution_error}
-
-Give me feedback on how to solve the errors.
-Think also if this step is necessary for the main task {main_task}
-I also pass you a screenshot 
-"""
-
-FINISHED_INSTRUCTIONS_EVAL_PROMPT_TEMPLATE = """
-Decide if the subtask is finished according to this feedback 
-
-{action_expert_feedback} 
-
-and the screenshot. Start the response with a 'Yes' or a 'No'. If it is no, explain why.
-"""
-
 SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE = "This is the subtask: '{subtask}'"
 
-EVALUATE_EXECUTION_PROMPT = """
-I have executed this instruction: '{instruction}'.
-Based *solely* on the current screen capture provided, has the instruction been completed successfully?
-
-**Crucial Point:** This screen *is* the state *after* I executed the instruction. Therefore, you must evaluate the success by observing the *changes* or *absence* of elements that the instruction aimed to alter or remove.
-You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things.
-
-For example:
-* If the instruction was to "close the pop-up," and the pop-up is no longer visible on the screen, that indicates successful completion, not an error.
-* If the instruction was to "add a new folder," and a new folder is now visible, that indicates successful completion.
-* If the instruction was to "delete an item," and that item is no longer on the screen, that indicates successful completion.
-
-Reflect carefully on what the *intended outcome* of the instruction would look like on the screen *after* execution.
-
-Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, think step by step through your evaluation process, considering the instruction's goal and the current screen state.
-2.  **Revised instruction:** After your reasoning, you MUST respond only 'yes' or 'no' to indicate if the instruction was completed successfully based on the screen.
-
-The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
-
-Example of how the response should appear:
-RESPONSE: yes
-"""
 
 FIRST_EVALUATE_EXECUTION_PROMPT = """
 You are an expert on evaluating execution of actions in GUI environments.
@@ -148,45 +102,65 @@ RESPONSE: Minor: You should click slightly more to the right.
 class ReflectionExpert:
     def __init__(self, model_id: str = "gemini-2.0-flash"):
         """
-        Inicializa el experto en reflection.
+        Initialitation of the Reflexion Expert
         """
         load_dotenv()
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         if not gemini_api_key:
-            logger.error("GEMINI_API_KEY no encontrada en el archivo .env para ActionExpert")
-            raise ValueError("GEMINI_API_KEY no encontrada en el archivo .env")
+            logger.error("GEMINI_API_KEY not found in the file .env for Reflection Expert")
+            raise ValueError("GEMINI_API_KEY not found in the file .env")
         
         genai.configure(api_key=gemini_api_key)
         self.model = genai.GenerativeModel(model_id)
 
         self.chat = self.model.start_chat(history=[])
-        self.last_printed_index = 0
 
         self.instruction_list = []
         self.instruction_index = 0
-        self.subtask = ""
-
+        
         self.last_printed_index = 0 # this is for printing the chat history for debugging
+    
+    def _parse_llm_response_text(self, response_text: str) -> str:
+        """
+        Parses the text response from an LLM, expecting a "RESPONSE:" prefix.
 
-    
-    
+        This helper function extracts the relevant content from the LLM's response
+        by splitting it at the "RESPONSE:" delimiter and stripping any leading/trailing
+        whitespace. It raises a ValueError if the expected prefix is not found.
+
+        Args:
+            response_text (str): The raw text response received from the LLM.
+
+        Returns:
+            str: The extracted content after the "RESPONSE:" prefix.
+        """
+        parts = response_text.split("RESPONSE:", 1)
+        if len(parts) < 2:
+            raise ValueError(f"LLM response missing 'RESPONSE:' prefix: {response_text}")
+        
+        return parts[1].strip()
 
     def set_subtask_and_instructions(self, subtask: str, instruction_list) -> None:
         """
-        Adds the current subtask and its generated instructions to the chat history.
+        Saves the instruction_list and adds the current subtask to the chat history.
 
         This function serves to log the detailed plan (subtask and its specific
         instructions) within the ongoing conversation history. This ensures that
         the LLM (and anyone reviewing the chat history) has a clear record of
-        the plan that was put into action.
+        the plan that was put into action. It also initializes the instruction
+        index to zero, preparing for the sequential execution of the instructions.
 
         Args:
             subtask (str): The specific subtask that has been set for execution.
-            instruction_list (str): The detailed list of instructions generated
-                                    for carrying out the given subtask.
+            instruction_list (list): The detailed list of instructions generated
+                                     for carrying out the given subtask. This is
+                                     expected to be a list of strings, where each
+                                     string is a distinct instruction.
 
         Returns:
-            None: This function directly modifies the `chat.history` in place.
+            None: This function directly modifies the `chat.history` by appending
+                  a user message, and it updates `self.instruction_list` and
+                  `self.instruction_index`.
         """
         try:
             content_message_string = SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE.format(
@@ -202,142 +176,160 @@ class ReflectionExpert:
             self.instruction_list = instruction_list
             self.instruction_index = 0
             
-            #logger.info(f"Subtask '{subtask}' and first instruction added to chat history.")
         
         except Exception as e:
             logger.error(f"Error in set_subtask_and_instructions() of reflection_expert: {e}")
             raise
-
-    
-    def execution_error_reflection(self, execution_error: str, action_expert_feedback: str, main_task, SOM: any) -> str:
-        """
-        Facilitates reflection on an execution error by querying an LLM for feedback.
-
-        This function provides the LLM with details of a failed execution, including
-        the actions attempted and the specific error encountered. It asks the LLM
-        for guidance on resolving the error.
-        The current screen state (SOM) is also provided as context.
-
-        Args:
-            execution_error (str): A description of the error that occurred during task execution.
-            action_expert_feedback (str): A summary of the actions that were attempted
-                                          before the error occurred.
-            SOM (any): The screenshot of the current screen state, providing visual context to the LLM.
-
-        Returns:
-            str: The LLM's textual response containing feedback on the error
-        """
-        prompt = EXECUTION_ERROR_REFLECTION_PROMPT_TEMPLATE.format(
-            action_expert_feedback=action_expert_feedback,
-            execution_error=execution_error,
-            main_task = main_task
-        )
-        
-        #logger.info(f"Sending execution error details to LLM for reflection. Error: '{execution_error}'")
-
-        try:
-            response = self.chat.send_message([prompt, SOM])
-
-            #logger.info(f"LLM's error reflection feedback: {response.text}")
-            return response.text
-
-        except Exception as e:
-            logger.error(f"Error in execution_error_reflection() of planning_expert: {e}")
-            raise
-
-    def finished_instructions_eval(self, action_expert_feedback: str, SOM: any) -> bool:
-        """
-        Evaluates whether a given subtask has been successfully completed.
-
-        This function queries an LLM, providing it with feedback on actions performed
-        by the action expert and the current screen state (SOM). The LLM's role
-        is to determine if these actions, in conjunction with the visual context,
-        indicate the successful completion of the current subtask. It expects a
-        binary 'yes' or 'no' response from the LLM.
-
-        Args:
-            action_expert_feedback (str): A summary of the actions taken by the
-                                          action expert for the current subtask.
-            SOM (any): The screenshot of the current screen state, offering visual context to the LLM.
-
-        Returns:
-            bool: True if the LLM determines the subtask is finished ('yes'),
-                  False otherwise ('no').
-
-        Raises:
-            Exception: If an error occurs during the interaction with the LLM.
-        """
-        try:
-            prompt = FINISHED_INSTRUCTIONS_EVAL_PROMPT_TEMPLATE.format(
-                action_expert_feedback=action_expert_feedback
-            )
-            
-            #logger.info(f"Asking LLM to evaluate subtask completion based on feedback: '{action_expert_feedback}'")
-
-            response = self.chat.send_message([prompt, SOM])
-            
-            llm_decision = response.text.strip()
-            #logger.info(f"LLM's decision on subtask completion: '{llm_decision}'")
-
-            return llm_decision
-
-        except Exception as e:
-            logger.error(f"Error in finished_instructions_eval() of reflection_expert: {e}")
-            raise 
     
     def create_new_instruction(self):
-        prompt = "taking into account the last evaluation respond only with the next instruction. don't add any comments."
+        """
+        Generates a new, single instruction to address a minor error without altering the existing instruction list.
+
+        This function is invoked when a small issue can be resolved with a one-off instruction.
+        It prompts the language model (LLM) to generate a corrective instruction based on the
+        last evaluation. Crucially, this new instruction is not added to the ongoing `instruction_list`,
+        nor does it modify the sequence of existing instructions. The agent is expected to execute
+        this generated instruction immediately and then resume its progression through the
+        original `instruction_list` as if no error had occurred.
+
+        Args:
+            None as it has all the information in the chat history.
+
+        Returns:
+            str: The newly generated single instruction from the LLM.
+        """
+        prompt = "Taking into account the last evaluation, respond only with the next instruction. don't add any comments."
         response =self.chat.send_message(prompt)
         return response.text
 
-    def _print_history(self):
-        for i in range(self.last_printed_index, len(self.chat.history)):
-            message = self.chat.history[i]
-            text_content = message.parts[0].text 
-            print(f"{message.role}: {{ \"{text_content}\" }}")
-        
-        self.last_printed_index = len(self.chat.history)
-    
-    # def evaluate_execution(self, screenshot):
-    #     prompt = EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
-    #     response =self.chat.send_message([prompt, screenshot])
-    #     logger.info("este es el resultado de la evaluación: "+ response.text)
-    #     parts = response.text.split("RESPONSE:", 1)
-    #     final_response = parts[1].strip()
-
-    #     return final_response == "yes"
-
     def evaluate_execution(self, screenshot):
-        prompt = FIRST_EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
-        response = self.chat.send_message([screenshot, prompt])
-        # logger.info("Descripción de lo que se espera en pantalla tras ejecutar la instrucción: " + response.text)
-        response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
-        # logger.info("Descripción del elemento más importante y su estado: " + response.text)
-        response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
-        parts = response.text.split("RESPONSE:", 1)
-        final_response = parts[1].strip()
-        logger.info("Did the execution went well? " + final_response)
-        return final_response == 'yes'
+        """
+        Evaluates the success of an executed instruction by interacting with a language model
+        (LLM) in a multi-step conversational process.
+
+
+        Args:
+            self: The instance of the class, expected to have a `chat` object for sending messages
+                and an `instruction_list` with the `instruction_index` pointing to the current instruction.
+            screenshot: The image representing the state of the GUI after the instruction was executed.
+
+        Returns:
+            bool: True if the LLM determines the instruction was successfully completed ('yes'),
+                False otherwise ('no').
+        """
+        try:
+            prompt = FIRST_EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+            response = self.chat.send_message([screenshot, prompt])
+            response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
+            response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
+
+            final_response = self._parse_llm_response_text(response.text)
+
+            logger.info("Did the execution went well? " + final_response)
+
+            return final_response.lower() == 'yes'
+        
+        except Exception as e:
+            logger.error(f"Error in evaluate_execution: {e}")
+            raise
     
-    def is_last_instruction(self):
-        #logger.info(f"estas son las intrucciones que tiene guardadas el reflection_expert {self.instruction_list} y esta el indice actual {self.instruction_index}")
+    def is_last_instruction(self) -> bool:
+        """
+        Checks if the current instruction being processed is the last one in the instruction list.
+
+        This function is crucial for controlling the flow of instruction execution,
+        allowing the system to determine when all planned steps have been completed.
+
+        Args:
+            self: The instance of the class, expected to have an `instruction_list`
+                (a list of instructions) and an `instruction_index` (the index
+                of the currently active instruction).
+
+        Returns:
+            bool: True if the `instruction_index` points to the last element of
+                `instruction_list`, False otherwise.
+        """
         return len(self.instruction_list) - 1 == self.instruction_index
     
     def get_next_instruction(self):
-        #logger.info("doy la siguiente instrucción")
+        """
+        Retrieves the next instruction from the instruction list and advances the instruction index.
+        Always the function is_last_instruction() should be called before to prevent index out of bound errors.
+
+        This function increments the internal `instruction_index` and then returns the
+        instruction at this new index. It is used to get the next instruction to pass it to the action expert.
+
+        Args:
+            self: The instance of the class, expected to have an `instruction_list`
+                (a list of instructions) and an `instruction_index` (the index
+                of the currently active instruction).
+
+        Returns:
+            str: The instruction string at the newly incremented `instruction_index`.
+        """
         self.instruction_index += 1
         return self.instruction_list[self.instruction_index]
     
     def evaluate_error(self, main_task, screenshot):
-        prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index], main_task = main_task)
-        response =self.chat.send_message([prompt, screenshot])
-        logger.info("This is the response of the reflection expert: " + response.text)
-        parts = response.text.split("RESPONSE:", 1)
-        final_response = parts[1].strip()
+        """
+        Evaluates a detected error by querying a language model (LLM) to classify it
+        as minor or major and suggest solutions.
 
-        return final_response
+        This function sends the current instruction, the main task, and a screenshot
+        to the LLM. The LLM then provides a detailed response that includes a reasoning
+        process, identifies the cause of the error, and proposes solutions. The error
+        classification (minor or major) is based on specific criteria defined in the
+        `EVALUATE_ERROR_PROMPT`, primarily whether the error can be resolved with a
+        single follow-up instruction.
+
+        Args:
+            self: The instance of the class, providing access to the `chat` object
+                for LLM interaction and the `instruction_list` with the current `instruction_index`.
+            main_task (str): A description of the overall main task, used by the LLM
+                            for context in evaluating the necessity of steps.
+            screenshot: The image representing the current state of the GUI where the
+                        error occurred.
+
+        Returns:
+            str: The LLM's response, stripped of the "RESPONSE:" prefix, which
+                contains the error classification (e.g., "Minor: ...", "Major: ...")
+                and proposed solutions.
+        """
+        try:
+
+            prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index], main_task = main_task)
+            response =self.chat.send_message([prompt, screenshot])
+
+            logger.info("This is the response of the reflection expert: " + response.text)
+
+            final_response = self._parse_llm_response_text(response.text)
+            return final_response
+        
+        except Exception as e:
+            logger.error(f"Error in evaluate_error: {e}")
+            raise
+    
+    
 
     def _print_history(self):
+        """
+        Prints new messages from the chat history to the console since the last print.
+
+        This internal helper function iterates through the `chat.history` list, starting
+        from the `last_printed_index`. It prints each new message, formatted to show
+        its role (e.g., 'user', 'model') and the text content. After printing, it updates
+        `last_printed_index` to the current total number of messages in the history,
+        ensuring that only new messages are printed in subsequent calls.
+
+        Args:
+            self: The instance of the class, expected to have a `chat` object with a
+                `history` attribute (a list of message objects) and a `last_printed_index`
+                attribute (an integer tracking the last printed message's index).
+
+        Returns:
+            None: This function performs side effects by printing to standard output
+                and modifying `self.last_printed_index`.
+        """
         for i in range(self.last_printed_index, len(self.chat.history)):
             message = self.chat.history[i]
             text_content = message.parts[0].text 
@@ -406,93 +398,3 @@ if __name__ == "__main__":
         }""")
 
     reflection_expert._print_history()
-
-        
-
-
-
-
-    
-    
-    """
-    # caso 1 --------------------------------
-    image_name = 'som_screenshot_4.png'
-    image_path = os.path.join(image_folder, image_name)
-    SOM = Image.open(image_path)
-
-    osworld_action = "error: no he encontrado ningún link"
-    action_expert_feedback = "he abierto el navegador, he buscado perros en la barra de busqueda"
-
-    print("caso 1: execution error por parte del action expert")
-
-    if osworld_action.startswith("error:"):
-        reflection_expert_feedback = reflection_expert.execution_error_reflection(
-            osworld_action,
-            action_expert_feedback,
-            SOM)
-    reflection_expert._print_history()
-
-    print("caso 1 terminado -----------------------------------------------\n")
-
-    
-    # caso 2.1 ---------------------------------
-    image_name = 'som_screenshot_5.png'
-    image_path = os.path.join(image_folder, image_name)
-    SOM = Image.open(image_path)
-
-    subtask = "descargate la foto de un perro"
-    instruction_list = """
-    #1. pulsa la sección de imagenes
-    #2. haz click derecho sobre la imagen de un perro
-    #3. dale a guardar como
-    """
-    reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
-    action_expert_feedback = "He pulsado en la sección de imagenes después he pulsado click derecho sobre la imagen de un perro y la he guardado "
-
-    print("caso 2.1: Instruction list terminada pero incorrectamente")
-
-    reflection_expert_feedback = reflection_expert.finished_instructions_eval(
-        action_expert_feedback,
-        SOM) 
-    if reflection_expert_feedback.startswith("Yes"):
-        reflection_expert_feedback = ""
-        print("Ha terminado correctamente")
-    else:
-        print("NO ha terminado correctamente")
-    
-    reflection_expert._print_history()
-    
-    print("caso 2.1 terminado -----------------------------------------------\n")
-
-    # caso 2.2 ---------------------------------
-    image_name = 'som_screenshot_6.png'
-    image_path = os.path.join(image_folder, image_name)
-    SOM = Image.open(image_path)
-
-    subtask = "descargate la foto de un perro"
-    instruction_list = """
-    #1. pulsa la sección de imagenes
-    #2. haz click derecho sobre la imagen de un perro
-    #3. dale a guardar como
-    """
-    reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
-    action_expert_feedback = "He pulsado en la sección de imagenes después he pulsado click derecho sobre la imagen de un perro y la he guardado "
-
-    print("caso 2.2: Instruction list terminada correctamente")
-
-    reflection_expert_feedback = reflection_expert.finished_instructions_eval(
-        action_expert_feedback,
-        SOM) 
-    if reflection_expert_feedback.startswith("Yes"):
-        reflection_expert_feedback = ""
-        print("Ha terminado correctamente")
-    else:
-        print("NO ha terminado correctamente")
-    
-    reflection_expert._print_history()
-    
-    print("caso 2.2 terminado -----------------------------------------------\n")
-    """
-
-
-    
