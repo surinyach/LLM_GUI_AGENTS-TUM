@@ -194,4 +194,5 @@ vmware_vm_data
 # result
 **/result*/**/*
 
-logs/
+# logs dir
+/logs
