@@ -3,6 +3,7 @@ import logging
 from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
+from .utils import parse_llm_response
 
 
 logger = logging.getLogger("reflection_expert")
@@ -16,53 +17,51 @@ You are an expert on evaluating execution of actions in GUI environments.
 I have executed this instruction: {instruction}
 
 Task:
-
-The attached image shows the state after executing the instruction. 
-Reason which elements are important to analyze in order to determine if the instruction indicated before has been successfully solved.
-Reflect carefully on what the *intended outcome* of the instruction would look like on the screen *after* execution.
-
-Response:
-
-Description of the critical elements that need to be inspected to decide if the instruction has been acomplished. 
-Also add in the description in which is the expected state of every of these elements after the instruction has been correctly executed in the environment. 
+Analyze the attached screenshot to identify the active application, window state, and visible UI elements (e.g., search bars, tabs, buttons).
+Determine which elements are involved to verify if the instruction was successfully executed. Even if it is not very relationed you should take them into account.
+Reflect on the *intended outcome* of the instruction and describe the expected state of these elements after correct execution.
+For hotkey-based instructions (e.g., Ctrl+Shift+B to show a bookmark bar), assume the action succeeded even if the result is not visually distinct.
+Provide a clear description of the critical elements and their expected state.
 
 Example:
-If the instruction is to remove something, the current screen must not show the item to be a successful execution.
+If the instruction is 'Click the browser's address bar,' the critical element is the address bar, which should be highlighted or show a blinking cursor after execution.
+Or if the instruction is to remove something, the current screen must not show the item to be a successful execution.
+
+Response:
+Description of the critical elements that need to be inspected to decide if the instruction has been acomplished. 
+Also add in the description in which is the expected state of every of these elements after the instruction has been correctly executed in the environment. 
 """
 
 SECOND_EVALUATE_EXECUTION_PROMPT="""
 You are an image analyzer expert.
 
 Task:
-
-Among all the descripted elements of the previous analysis, choose which are the most important ones. 
-Then analyze them in detail in the screen to see if it accomplishes the desired state.
+From the elements identified in the previous analysis, select the most important ones based on their direct relevance to the instruction's goal
+(e.g., the address bar for a typing instruction, a new tab for Ctrl+T). Analyze the screenshot to determine the state of these elements. 
+Trust the screenshot for visible elements (e.g., buttons, tabs) and assume hotkey actions (e.g., Ctrl+Shift+B) succeeded even if the result is not visually distinct.
+If an element is ambiguous (e.g., multiple search bars), specify which one (e.g., 'the browser’s address bar').
+Provide a detailed description of the elements’ current state and reason whether it matches the expected state.
 
 Response:
-
-Give the detailed description of the state of the most important elements.
-Then provide also a reasoning about if the state of the elements is the desired one after completing the instruction in the current screen of the environment showed in the screenshot. 
+Detailed description of the most important elements' current state and reasoning on whether it matches the expected state after the instruction.
 """
 
 THIRD_EVALUATE_EXECUTION_PROMPT="""
 Task:
-
-Taking into account the previous analysis, the expected state of the elements after executing the instruction and the state of the screen determine if the instruction has been correctly performed or not.
-
-Crucial point: The showed screen is the state after executing the instruction. Therefore, you must evaluate the success by observing the changes or absence of elements that the instruction aimed to alter or remove.
-You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things.
-IMPORTANT: If you have done an action that must work like pressing ctrl + shift + b, the execution will be always successful, you just have to take into account that if there is no text you won't be able to see it but you have to act s if it was there.
-
+Based on the previous analysis, the expected state of the elements, and the screenshot, determine if the instruction was successfully executed.
+The screenshot shows the state *after* the instruction, so evaluate success by checking for changes or absence of elements the instruction aimed to alter.
+Rely on screenshot evidence for visible changes (e.g., a new folder, a closed pop-up) and assume hotkey actions (e.g., Ctrl+T for a new tab) succeeded.
+If the instruction was to 'download a file,' check for the file in the downloads folder or a download indicator.
 For example:
 
 * If the instruction was to "close the pop-up," and the pop-up is no longer visible on the screen, that indicates successful completion, not an error.
 * If the instruction was to "add a new folder," and a new folder is now visible, that indicates successful completion.
 * If the instruction was to "delete an item," and that item is no longer on the screen, that indicates successful completion.
 
-Response:
-
-You MUST respond only 'yes' or 'no' to indicate if the instruction was completed successfully based on the screen.
-The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
+Here's how I want you to structure your response:
+1.  **Reasoning Process:** Write down your thought process here.
+2.  **Final answer:** You MUST respond only 'yes' or 'no' to indicate if the instruction was completed successfully based on the screen.
+                      The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
 
 Example of how the response should appear:
 RESPONSE: yes
@@ -70,7 +69,6 @@ RESPONSE: yes
 
 EVALUATE_ERROR_PROMPT = """
 Tell me if the last error is a major or minor error. 
-Also take into account that when searching in a browser the first links usually are patrocinated and we are not intereseted in them.
 Think about what you are looking for and see if the first link makes sense.
 Think also if this step is necessary for the main task {main_task}
 This is how you can classify an error:
@@ -120,25 +118,7 @@ class ReflectionExpert:
         
         self.last_printed_index = 0 # this is for printing the chat history for debugging
     
-    def _parse_llm_response_text(self, response_text: str) -> str:
-        """
-        Parses the text response from an LLM, expecting a "RESPONSE:" prefix.
-
-        This helper function extracts the relevant content from the LLM's response
-        by splitting it at the "RESPONSE:" delimiter and stripping any leading/trailing
-        whitespace. It raises a ValueError if the expected prefix is not found.
-
-        Args:
-            response_text (str): The raw text response received from the LLM.
-
-        Returns:
-            str: The extracted content after the "RESPONSE:" prefix.
-        """
-        parts = response_text.split("RESPONSE:", 1)
-        if len(parts) < 2:
-            raise ValueError(f"LLM response missing 'RESPONSE:' prefix: {response_text}")
-        
-        return parts[1].strip()
+    
 
     def set_subtask_and_instructions(self, subtask: str, instruction_list) -> None:
         """
@@ -223,7 +203,7 @@ class ReflectionExpert:
             response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
             response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
 
-            final_response = self._parse_llm_response_text(response.text)
+            final_response = parse_llm_response(response.text)
 
             logger.info("Did the execution went well? " + final_response)
 
@@ -302,7 +282,7 @@ class ReflectionExpert:
 
             logger.info("This is the response of the reflection expert: " + response.text)
 
-            final_response = self._parse_llm_response_text(response.text)
+            final_response = parse_llm_response(response.text)
             return final_response
         
         except Exception as e:

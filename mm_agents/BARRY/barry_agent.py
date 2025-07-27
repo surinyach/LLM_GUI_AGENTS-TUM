@@ -128,7 +128,7 @@ class BarryAgent:
 
             # case 2
             elif state["reflection_planning"] == "finish":
-                done = self.planning_expert.main_task_done(self.SOM_screenshot)
+                done = self.planning_expert.is_main_task_done(self.SOM_screenshot)
                 if done:
                     return {"done": True}
                 else:
