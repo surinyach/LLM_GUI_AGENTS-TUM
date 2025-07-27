@@ -10,21 +10,23 @@ logger = logging.getLogger("planning_expert")
 
 DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE = """
 This is the main task: "{main_task}"
-Decompose it into subtasks. Don't do very fine grained subtask as later 
-you will have to think about the instructions for each subtask. It is important that each subtask involves at least an action.
-For example a subtask can't be just to look for a google chrome icon. The subtask should be "Open the browser". 
-Then when you have to give the instructions for the SUBTASK you can say click on the browser icon or type crome on the searching bar or something like that.
-Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing subtask or instructions
-that consist on doing a screenshot, locating an element or recording coordinates. Don't add a last subtask that says finish the task.
-It has to be a meaningful subtask.
-The agent can press a combination of keys at the same time so don't put them in different subtask. The same with clicking and typing. 
-If the window is not fully open add maximizing the window in the first task. If the window is already maximized DO NOT maximize it again and DO NOT MAKE SHURE to open it, do it ONLY if is way smaller than the full window.
-Take into account that llms are not very good finding difficult regions that doesn't have text or buttons like an empty bookmark bar
-DO NOT make instructions to release the click!!! it is not necessary, the action expert is not able to solve this type of instructions.
+Decompose it into a list of actionable subtasks. Each subtask must involve a clear action (e.g., 'Open the browser' instead of 'Locate the browser icon'). 
+Subtasks must not be conditional (e.g., do not say 'If the window is not maximized, maximize it'). 
+Instead, analyze the screenshot to make definitive decisions (e.g., if the window is not maximized, include 'Maximize the window' as a subtask; if it is maximized, do not include it). 
+Subtasks should not be overly granular, as detailed instructions will be provided later. Avoid subtasks that involve taking screenshots, locating elements, or recording coordinates, as the agent has screen markers for execution. 
+Prefer keyboard shortcuts or hotkeys (e.g., Ctrl+T for a new tab) to improve reliability, especially for actions where visual recognition might fail (e.g., empty bookmark bars)(you could make it visible by pressing ctrl + shift + B). 
+Identify the active application or window in the screenshot to ensure subtasks align with the current context (e.g., browser, file explorer). 
+Do not include a final subtask like 'Finish the task'; each subtask must be meaningful.
 
+Reasoning Process:
+1. Analyze the screenshot to identify the active application, visible elements (e.g., browser tabs, search bars, or file explorer), and window state (maximized or not).
+2. Break down the main task into logical and small goals.
+3. Make definitive decisions based on the screenshot (e.g., if the window is not maximized, include a maximize subtask).
+4. Consider using keyboard shortcuts or hotkeys to avoid reliance on visual elements that may be hard to recognize.
+5. Ensure subtasks are contextually appropriate based on the screenshot (e.g., if a browser is open, focus on browser-related actions).
 
 Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, think step-by-step about how to break down the main task. Consider the actions involved and ensure each subtask is actionable but not overly granular. Write down your thought process here.
+1.  **Reasoning Process:** Write down your thought process here.
 2.  **Final Subtasks:** After your reasoning, you MUST provide the final list of subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks.
     All text from "RESPONSE:" until the end of your response will be considered the list of subtasks. Each subtask should be separated by a semicolon ';'.
 
@@ -33,25 +35,25 @@ RESPONSE: Open the browser; Search for "example" on Google; Do something.
 """
 
 RETHINK_SUBTASK_PROMPT_TEMPLATE = """
-Rethink the subtask list. You MUST FORGET the previous subtask list you made. This re-evaluation is necessary either because:
+Re-evaluate the subtask list for the main task: "{main_task}".
+Do not repeat approaches that failed, as indicated by this feedback (if any): {reflection_expert_feedback}.
+If the current subtask "{current_subtask}" was completed successfully, determine the remaining steps.
+Analyze the screenshot to identify the active application, visible elements (e.g., browser tabs, search bars), and current state.
+Consider alternative workflows or keyboard shortcuts (e.g., Ctrl+T for a new tab) to achieve the task reliably, especially if visual recognition is challenging.
+If the feedback indicates an issue, propose a new approach avoiding the failed steps. If no feedback is provided, continue from the current state.
+Do not include subtasks for screenshots, locating elements, or recording coordinates, as the agent has screen markers.
+Ensure subtasks align with the current application context shown in the screenshot.
 
-A) There's an issue with the current approach, as highlighted by this feedback:
-{reflection_expert_feedback}
+Reasoning Process:
+1. Review the feedback (if any) to identify what went wrong or what subtask was completed.
+2. Analyze the screenshot to determine the active application, window state, and visible elements.
+3. If feedback indicates failure, devise an alternative approach (e.g., use a different application, a different path to get to the same point or use hotkeys).
+4. If the subtask was completed, identify the next logical steps to complete the main task.
+5. Ensure subtasks are actionable, contextually relevant, and leverage hotkeys where possible.
 
-OR
-
-B) I have successfully finished the current subtask: "{current_subtask}", and I need to know the remaining steps to complete the main task.
-
-Take into account the above reason (A or B), my past actions and messages, and the current state of my screen. 
-Think about the consequences of each task, for example if you close the tab and it is the only tab the window will close
-Think if the current task solved solves the main task and there is no need to do more tasks.
-If there was a problem (you can know this if there is feedback) think about alternative ways the main task could be solved. DON'T TRY TO DO THE SAME STEPS!!!** Consider different perspectives, workflows, or how similar problems are handled in other environments.
-This is vital to avoid retrying solutions that have repeatedly failed. You should trust the systems more than you trust you so if the system says something is visible it is true. Take into account that you are not good reconizing things so if there is a hot key combination which would do it easier or faster use that option.
-If you don't know what to do try a different approach or a different way. Re do the subtasks for the main task with the new approach.
-Now, provide a revised subtask list with what is still left to do to accomplish the main task: {main_task}.
 
 Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, analyze the provided feedback (if any), your past actions, and the current screen state. Determine whether the re-evaluation is due to an issue or a completed subtask. Think step-by-step about why the subtask list needs rethinking (if an issue was raised, considering alternatives), or what the next logical steps are (if the current subtask is finished). Based on this, formulate the revised list of remaining subtasks. Write down your comprehensive thought process here.
+1.  **Reasoning Process:**  Write down your thought process here.
 2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of remaining subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks. All text from "RESPONSE:" until the end of your response will be considered the revised list of subtasks. Each subtask should be separated by a semicolon ';'.
 
 Example of how the revised subtask list should appear:
@@ -59,27 +61,22 @@ RESPONSE: Select the "Images" tab; Choose a dog image; Download the image
 """
 
 DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
-Taking into account any feedback provided in the previous message (if there was)
-and a summary of actions already performed (if described in previous messages),
-decompose the following specific subtask into a series of detailed steps or instructions.
-Think if any task or instruction can be achieve by using a combination of hot keys. This is VERY IMPORTANT because this llm is bad at reconising elements that don't contain text so hotkeys are perfect
-Before every instruction, the agent who has to execute them, has a set of mark of the screen so avoid doing instructions
-that consist on doing a screenshot, locating an element or recording coordinates.
-If some steps can be done together like clicking, selecting the text with ctrl + A and typing put it all in the same instruction.
-The answer should only contain the steps, don't add any comments.
-{current_subtask}.
+Decompose the subtask "{current_subtask}" into detailed, actionable instructions. Analyze the screenshot to identify the active application, visible elements (e.g., address bar, search bar, buttons), and window state. Prefer keyboard shortcuts or hotkeys (e.g., Ctrl+T to open a new tab, Ctrl+A to select text) to ensure reliability, especially for elements without clear text or buttons. Combine related actions (e.g., click, select text with Ctrl+A, and type) into a single instruction where appropriate. Avoid instructions for screenshots, locating elements, or recording coordinates, as the agent has screen markers. If an element is ambiguous (e.g., multiple search bars), specify which one (e.g., 'the browser's address bar').
+
+Reasoning Process:
+1. Analyze the screenshot to identify the active application and relevant UI elements.
+2. Break down the subtask into a sequence of executable instructions, prioritizing hotkeys for reliability.
+3. Combine actions where logical (e.g., clicking and typing in a search bar).
+4. Ensure clarity by specifying ambiguous elements (e.g., 'the browser's address bar' vs. 'the system's search bar').
 
 These steps do not need to be overly precise if the environment details are not fully known yet.
 However think that this steps will have to be translated into pyAutoGUI actions so it is not necessary to say
 move the mouse to th icon. As in pyAutoGUI you give the coordinates when you click.
 Please provide the decomposed steps as a clear list or sequence. 
 
-If there is something that could be ambiguous specifiy it. Like if there are 2 searchbars specify which one.
 
 Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. 
-Think step-by-step about why the instruction list needs rethinking (if an issue was raised) or what the next logical steps are. 
-Based on this, formulate the instruction list for the current subtask. Write down your thought process here.
+1.  **Reasoning Process:** Write down your thought process here.
 2.  **Revised Instruction List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the instructions. 
 All text from "RESPONSE:" until the end of your response will be considered the revised list of instructions. Each instruction should be separated by a semicolon ';'.
 
@@ -88,18 +85,17 @@ RESPONSE: Click on the browser icon; Click on the search bar; Type dogs.
 """
 
 IS_LAST_TASK_PROMPT_TEMPLATE = """
-I correctly finished this subtask: {current_subtask}. This is the main task: {main_task}
-Taking into account the subtask list you gave me is the main task done?
-Take into account your last task decomposition into subtask. Respond only with 'yes' or 'no'.
+The subtask "{current_subtask}" was completed successfully.
+The main task is: "{main_task}".
+Analyze the screenshot to verify if the main task is complete (e.g., check for a downloaded file, specific UI state, or visible result).
+Respond with 'yes' if the main task is fully accomplished, or 'no' if additional steps are needed.
 
 Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, analyze the provided feedback, your past actions, and the current screen state. 
-Think step-by-step about why the instruction list needs rethinking (if an issue was raised) or what the next logical steps are. 
-Based on this, formulate the instruction list for the current subtask. Write down your thought process here.
+1.  **Reasoning Process:** Write down your thought process here.
 2.  **Final answer:** After your reasoning, you MUST respond with 'RESPONSE:' followed only with a 'yes' or 'no'
+
 Example: 
 RESPONSE:yes
-
 """
 
 
