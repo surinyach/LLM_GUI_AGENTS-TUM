@@ -94,8 +94,8 @@ class PerceptionExpert:
     def get_som_screenshot(self):
         """
         Provides the SOM screenshot to the caller.
-        In order to get the desired screenshot first is necessary to run the store_screenshot
-        and process_screenshot functions.
+        In order to get the desired screenshot first is necessary to run the 'store_screenshot'
+        and 'process_screenshot' functions.
 
         Returns:
             SOM screenshot in base64 format.

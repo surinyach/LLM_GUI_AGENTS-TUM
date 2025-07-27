@@ -30,14 +30,14 @@ logger = logging.getLogger("desktopenv.agent")
 class BarryAgent:
     def __init__(self, model: str = "gemini-2.0-flash", observation_type: str = "screenshot", action_space: str = "pyautogui"):
         """
-        Inicializa el agente con la configuración para interactuar con OSWorld y la API de Gemini.
+        Initializes the agent with the configuration to interact with OSWorld and the Gemini API.
         """
         # Cargar variables de entorno desde .env
         load_dotenv()
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         if not gemini_api_key:
-            logger.error("GEMINI_API_KEY no encontrada en el archivo .env")
-            raise ValueError("GEMINI_API_KEY no encontrada en el archivo .env")
+            logger.error("GEMINI_API_KEY not found in the .env file")
+            raise ValueError("GEMINI_API_KEY not found in the .env file")
 
         # Configurar la API de Gemini
         genai.configure(api_key=gemini_api_key)
@@ -49,7 +49,7 @@ class BarryAgent:
         
         # Historial para el agente
         self.trajectory_length = 0
-        self.max_trajectory_length = 20
+        self.max_trajectory_length = 25
         self.call_user_count = 0
         self.call_user_tolerance = 3
         
@@ -86,13 +86,13 @@ class BarryAgent:
         # NODES -----------------------------------------------
 
         def start_router(state: State):
-            #logger"estoy en el start_router")
+            #logger.info("I am in start_router")
 
             if self.first_iteration:
-                #logger"me voy al planning expert")
+                #logger.info("I am going to the planning expert")
                 return {"next": "planning_expert"}
                 
-            #logger"me voy al reflection expert")
+            #logger.info("I am going to the reflection expert")
             return {"next": "reflection_expert"}
         
         def planning_expert(state: State):
@@ -163,24 +163,25 @@ class BarryAgent:
 
             # Case 1
             if (state["done"]):
-                ##logger"Primer caso del Barry Action Expert: Done")
-                return {"osworld_action": ["DONE"]}
+                # logger.info("First case of the Barry Action Expert: Done")
+                return {"osworld_action": "done"}
             
             # Case 2
 
             # Process the current instruction from the instruction list
-            action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description)
-            
+            feedback = state["reflection_action"]
+            action = self.action_expert.process_instruction(self.screenshot, self.SOM_screenshot, self.SOM_description, feedback)
             
             return {
                 "osworld_action": action
-            }            
+            }                       
         
         def reflection_router(state: State):
             condition = state["reflection_planning"] != ""
-            if condition: 
+            if condition:
                 return {"next": "planning_expert"}
-            #logger"voy otra vez al action expert")
+
+            # logger.info("Going back to the action expert")
             return {"next": "action_expert"}
         
         def reflection_expert(state: State):
@@ -289,91 +290,88 @@ class BarryAgent:
 
     def predict(self, instruction: str, obs: Dict) -> Tuple[str, List[str]]:
         """
-        Sends the screenshot and the instruction to the Agent in order to generate pyautogui actions.
+        Sends the screenshot and the instruction to the Agent in order to generate PyAutoGUI actions.
         """
-        #logger"Predict de barry agent")
+        # logger.info("Predict call in BarryAgent")
         self.trajectory_length += 1
-        
+
         if self.trajectory_length > self.max_trajectory_length:
-            logger.warning(f"Trayectoria excede el límite máximo de {self.max_trajectory_length} pasos")
+            logger.warning(f"Trajectory exceeds the maximum limit of {self.max_trajectory_length} steps")
             return "Maximum trajectory length exceeded", ["FAIL"]
-        
+
         try:
             # Process the new screenshot and store it in the Perception Expert
             self._process_new_screenshot(obs)
-            width, height = self.screenshot.size
-            print(f"RESOLUTION: {width}x{height}")
-            
-            # Si es la primera iteración copiamos la tarea y la añadimos al historial
+
+            # If it's the first iteration, copy the task and add it to the history
             if self.first_iteration:
                 self.main_task = instruction
-                # Inicializa el estado del grafo con la tarea principal si es la primera vez
-                # LangGraph se encargará de inicializar instruction_list en planning_expert
+                # Initialize the graph state with the main task if it's the first time
+                # LangGraph will handle initializing instruction_list in the planning expert
                 self.graph_state = {
                     "reflection_action": "",
                     "reflection_planning": "",
-
                     "done": False,
                     "osworld_action": "",
                 }
-            
-            # si no es la primera iteración ya tienes el grafo guardado de antes
 
+            # If it's not the first iteration, the graph state is already saved from before
             final_state = self.graph.invoke(self.graph_state)
             self.graph_state = final_state
             osworld_action_to_return = final_state.get("osworld_action")
             is_done = final_state.get("done", False)
 
-            if is_done and osworld_action_to_return == "done": # doble comprobación aun que con una ya sería suficiente
-                #logger"BarryAgent: Tarea finalizada con éxito.")
-                return "se acabo lo que se daba", ["DONE"]
+            if is_done and osworld_action_to_return == "done":
+                # logger.info("BarryAgent: Task successfully completed.")
+                return "Task completed", ["DONE"]
 
             if osworld_action_to_return:
-                #loggerf"BarryAgent: Acción decidida por el agente: '{osworld_action_to_return}'")
-                return "esta es la siguiente acción", osworld_action_to_return
+                # logger.info(f"BarryAgent: Action decided by the agent: '{osworld_action_to_return}'")
+                pyautogui_instructions = [line for line in osworld_action_to_return.strip().splitlines() if line]
+                pyautogui_instructions.append("time.sleep(1)")
+                return "Next action determined", pyautogui_instructions
+            
             else:
-                logger.warning("BarryAgent: El grafo no produjo una acción de OSWorld válida en esta iteración.")
+                logger.warning("BarryAgent: The graph did not produce a valid OSWorld action in this iteration.")
                 return "FAIL: No OSWorld action generated in this cycle.", ["FAIL"]
 
-            
         except Exception as e:
-            logger.error(f"Error al procesar la solicitud a Gemini: {e}")
-            return f"Error: {e}", ["FAIL"]
+            logger.error(f"Error during prediction: {e}")
+            return "FAIL: Exception occurred during prediction.", ["FAIL"]
 
 
     def reset(self, runtime_logger):
         """
-        Reinicia el estado del agente para una nueva tarea.
+        Resets the agent's state for a new task.
         """
         self.trajectory_length = 0
         self.call_user_count = 0
         self.first_iteration = True
-        #logger"Agente reiniciado")
+        # logger.info("Agent reset")
 
 
 
 if __name__ == "__main__":
     """
-    Bloque de prueba local para el agente.
+    Local test block for the agent.
     """
     try:
-        # Crear una instancia del agente
+        # Create an instance of the agent
         agent = BarryAgent()
         
-        # Reiniciar el agente
+        # Reset the agent
         agent.reset(None)
         
-        # Instrucción de prueba
-        test_instruction = "Listar los archivos en el directorio actual"
+        # Test instruction
+        test_instruction = "List the files in the current directory"
         
-        # Simular observación de prueba (necesitarías un screenshot real)
+        # Simulate test observation (you would need a real screenshot)
         test_obs = {
-            "screenshot": b"",  # Aquí iría los bytes del screenshot real
+            "screenshot": b"",  # Place the real screenshot bytes here
         }
         
-        print("Agente inicializado correctamente")
-        
-    
+        print("Agent initialized successfully")
+
     except Exception as e:
-        print(f"Error en la prueba: {e}")
-        print("Asegúrate de tener configurado GEMINI_API_KEY en tu archivo .env")
+        print(f"Test error: {e}")
+        print("Make sure GEMINI_API_KEY is set in your .env file")
