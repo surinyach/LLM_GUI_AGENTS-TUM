@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 import lib_run_single
 from desktop_env.desktop_env import DesktopEnv
-from mm_agents.BARRY.barry_agent import BarryAgent
+from Barry_Agent.barry_agent import BarryAgent
 
 # Logger Configs
 logger = logging.getLogger()
