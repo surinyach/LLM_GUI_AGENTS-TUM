@@ -4,34 +4,22 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
 from .utils import parse_llm_response
+from datetime import datetime
 
 
 logger = logging.getLogger("planning_expert")
 
 DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE = """
 This is the main task: "{main_task}"
-Decompose it into a list of actionable subtasks. Each subtask must involve a clear action (e.g., 'Open the browser' instead of 'Locate the browser icon'). 
-Subtasks must not be conditional (e.g., do not say 'If the window is not maximized, maximize it'). 
-Instead, analyze the screenshot to make definitive decisions (e.g., if the window is not maximized, include 'Maximize the window' as a subtask; if it is maximized, do not include it). 
-Subtasks should not be overly granular, as detailed instructions will be provided later. Avoid subtasks that involve taking screenshots, locating elements, or recording coordinates, as the agent has screen markers for execution. 
-Prefer keyboard shortcuts or hotkeys (e.g., Ctrl+T for a new tab) to improve reliability, especially for actions where visual recognition might fail (e.g., empty bookmark bars)(you could make it visible by pressing ctrl + shift + B). 
+Decompose it into a list of subtasks. The subtask must be goals and they should be used for guidance. 
+Avoid subtasks that involve taking screenshots, locating elements, or recording coordinates, as the agent has screen markers for execution. 
 Identify the active application or window in the screenshot to ensure subtasks align with the current context (e.g., browser, file explorer). 
 Do not include a final subtask like 'Finish the task'; each subtask must be meaningful.
-
-Reasoning Process:
-1. Analyze the screenshot to identify the active application, visible elements (e.g., browser tabs, search bars, or file explorer), and window state (maximized or not).
-2. Break down the main task into logical and small goals.
-3. Make definitive decisions based on the screenshot (e.g., if the window is not maximized, include a maximize subtask).
-4. Consider using keyboard shortcuts or hotkeys to avoid reliance on visual elements that may be hard to recognize.
-5. Ensure subtasks are contextually appropriate based on the screenshot (e.g., if a browser is open, focus on browser-related actions).
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:** Write down your thought process here.
 2.  **Final Subtasks:** After your reasoning, you MUST provide the final list of subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks.
     All text from "RESPONSE:" until the end of your response will be considered the list of subtasks. Each subtask should be separated by a semicolon ';'.
-
-Example of how the subtask list should appear:
-RESPONSE: Open the browser; Search for "example" on Google; Do something.
 """
 
 RETHINK_SUBTASK_PROMPT_TEMPLATE = """
@@ -39,49 +27,70 @@ Re-evaluate the subtask list for the main task: "{main_task}".
 Do not repeat approaches that failed, as indicated by this feedback (if any): {reflection_expert_feedback}.
 If the current subtask "{current_subtask}" was completed successfully, determine the remaining steps.
 Analyze the screenshot to identify the active application, visible elements (e.g., browser tabs, search bars), and current state.
-Consider alternative workflows or keyboard shortcuts (e.g., Ctrl+T for a new tab) to achieve the task reliably, especially if visual recognition is challenging.
-If the feedback indicates an issue, propose a new approach avoiding the failed steps. If no feedback is provided, continue from the current state.
-Do not include subtasks for screenshots, locating elements, or recording coordinates, as the agent has screen markers.
-Ensure subtasks align with the current application context shown in the screenshot.
+Decompose it into a list of subtasks. The subtask must be goals and they should be used for guidance. They are not instructions to perform the task. 
+Avoid subtasks that involve taking screenshots, locating elements, or recording coordinates, as the agent has screen markers for execution. 
+Identify the active application or window in the screenshot to ensure subtasks align with the current context (e.g., browser, file explorer). 
+Do not include a final subtask like 'Finish the task'; each subtask must be meaningful.
 
 Reasoning Process:
 1. Review the feedback (if any) to identify what went wrong or what subtask was completed.
 2. Analyze the screenshot to determine the active application, window state, and visible elements.
-3. If feedback indicates failure, devise an alternative approach (e.g., use a different application, a different path to get to the same point or use hotkeys).
-4. If the subtask was completed, identify the next logical steps to complete the main task.
-5. Ensure subtasks are actionable, contextually relevant, and leverage hotkeys where possible.
+3. If feedback indicates failure, devise an alternative approach (e.g., use a different application, a different path to get to the same point).
+4. If the subtask was completed, identify the next goal to complete the main task.
 
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:**  Write down your thought process here.
 2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of remaining subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks. All text from "RESPONSE:" until the end of your response will be considered the revised list of subtasks. Each subtask should be separated by a semicolon ';'.
-
-Example of how the revised subtask list should appear:
-RESPONSE: Select the "Images" tab; Choose a dog image; Download the image
 """
 
-DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
-Decompose the subtask "{current_subtask}" into detailed, actionable instructions. Analyze the screenshot to identify the active application, visible elements (e.g., address bar, search bar, buttons), and window state. Prefer keyboard shortcuts or hotkeys (e.g., Ctrl+T to open a new tab, Ctrl+A to select text) to ensure reliability, especially for elements without clear text or buttons. Combine related actions (e.g., click, select text with Ctrl+A, and type) into a single instruction where appropriate. Avoid instructions for screenshots, locating elements, or recording coordinates, as the agent has screen markers. If an element is ambiguous (e.g., multiple search bars), specify which one (e.g., 'the browser's address bar').
 
-Reasoning Process:
-1. Analyze the screenshot to identify the active application and relevant UI elements.
-2. Break down the subtask into a sequence of executable instructions, prioritizing hotkeys for reliability.
-3. Combine actions where logical (e.g., clicking and typing in a search bar).
-4. Ensure clarity by specifying ambiguous elements (e.g., 'the browser's address bar' vs. 'the system's search bar').
+DECOMPOSE_SUBTASK_PROMPT_TEMPLATE = """
+Decompose the subtask "{current_subtask}" into detailed, actionable instructions. 
+IMPORTANT THINGS TO TAKE INTO ACCOUNT:
+0. There is no need to decompose a sequence of keys in different instructions. In pyAutoGUI you can press different keys at the same time and it does not need different instructions.
+1. Analyze the screenshot to identify the active application, visible elements (e.g., address bar, search bar, buttons), and window state. 
+2. ONLY Maximize the window if it is not maximized. (you can decide from the screenshot)
+3. Prefer keyboard shortcuts or hotkeys (e.g., Ctrl+T to open a new tab, Ctrl+A to select text) to ensure reliability, especially for elements without clear text or buttons. 
+4. Combine related actions (e.g., click, select text with Ctrl+A, type and press enter) into a SINGLE instruction (NOT SEPARATED WITH ';') where appropriate. 
+   If there is text were it should be clicked there is no need to use hotkeys as the llm is good clicking where there is text! in the SAME instruction, not in different instructions 
+5. Avoid instructions for screenshots, locating elements, or recording coordinates, as the agent has screen markers. 
+6. If an element is ambiguous (e.g., multiple search bars), specify which one (e.g., 'the browser's address bar').
+7. Do not make any instruction of release button as in pyAutoGUI there is not such instruction.
+8. Do not put 'if' in instructions, you are being passed a screenshot. You decide what to do.
+
 
 These steps do not need to be overly precise if the environment details are not fully known yet.
 However think that this steps will have to be translated into pyAutoGUI actions so it is not necessary to say
 move the mouse to th icon. As in pyAutoGUI you give the coordinates when you click.
-Please provide the decomposed steps as a clear list or sequence. 
-
 
 Here's how I want you to structure your response:
-1.  **Reasoning Process:** Write down your thought process here.
+1.  **Reasoning Process:** Write down your thought process here and the first version of your answer.
 2.  **Revised Instruction List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the instructions. 
 All text from "RESPONSE:" until the end of your response will be considered the revised list of instructions. Each instruction should be separated by a semicolon ';'.
 
 Example of how the revised subtask list should appear:
-RESPONSE: Click on the browser icon; Click on the search bar; Type dogs.
+RESPONSE: Click on the browser icon; Click on the search bar and Type dogs.
+"""
+
+DECOMPOSE_SUB_TASK_PROMPT_TEMPLATE_REFLECT = """
+Reflect Questions:
+1. ONLY If the window was not maximized, was a instruction to maximize it included?
+2. For actions like opening new tabs, saving, selecting all text, or maximizing/minimizing windows, have keyboard shortcuts (e.g., Ctrl+T, Ctrl+S, Ctrl+A) been used instead of mouse clicks where applicable? (if there is a text on the area where it should be clicked there is no need of using hotkeys)
+3. Were hotkeys used for actions where visual recognition might be difficult (e.g., an empty bookmark bar, using Ctrl+Shift+B to make it visible)?
+4. Are the chosen hotkeys standard and widely applicable for the identified active application?
+5. Are there any instructions that instruct the agent to "take a screenshot," "locate the X icon," or "find the coordinates of the button"? (There should not been)
+6. Are there instructions in separated instructions like click and type that could be together? (instructions like click and type MUST be in the same instruction, not separated by a ;)
+7. Do any of the instructions include instructions to "release" a key or mouse button?
+8. Are there any 'if' in the instructions? (it should not be)
+
+Here's how I want you to structure your response:
+1.  **Reflect Process:** Review your answer answering the Reflect questions.
+2.  **Revised Instruction List:** After your reasoning, you MUST provide the revised list of the instruction list. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the instructions. 
+All text from "RESPONSE:" until the end of your response will be considered the revised list of instructions. Each instruction should be separated by a semicolon ';'
+
+Example of how the revised subtask list should appear:
+RESPONSE: Click on the browser icon; Click on the search bar and Type dogs.
 """
 
 IS_LAST_TASK_PROMPT_TEMPLATE = """
@@ -121,6 +130,30 @@ class PlanningExpert:
         self.current_subtask = ""
 
         self.first_iter = True    
+
+        # Set up log file directory and path
+        self.log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+        os.makedirs(self.log_dir, exist_ok=True)  # Create logs directory if it doesn't exist
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = os.path.join(self.log_dir, f'planning_expert_history_{timestamp}.log')
+    
+    def _save_chat_history_to_file(self):
+        """
+        Saves the chat history to a log file since the last printed index.
+        Each message includes a timestamp, role, and content.
+        """
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                for i in range(self.last_printed_index, len(self.chat.history)):
+                    message = self.chat.history[i]
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    text_content = message.parts[0].text
+                    log_entry = f"[{timestamp}] {message.role}: {text_content}\n"
+                    f.write(log_entry)
+                self.last_printed_index = len(self.chat.history)
+        except Exception as e:
+            logger.error(f"Error saving chat history to file: {e}")
+            raise
     
     def decompose_main_task(self, main_task, screenshot):
         """
@@ -157,6 +190,9 @@ class PlanningExpert:
             logger.info(f"These are the subtasks created by the planning expert: {subtask_list}")
 
             self.current_subtask = subtask_list[0]
+
+            self._save_chat_history_to_file()
+
             return self.current_subtask
     
         except Exception as e:
@@ -188,7 +224,9 @@ class PlanningExpert:
             
             llm_response_text = parse_llm_response(response.text)
 
-            return llm_response_text[0].lower() == 'yes'
+            self._save_chat_history_to_file()
+
+            return llm_response_text.lower() == 'yes'
         
         except Exception as e:
             logger.error(f"Error in is_main_task_done() of planning_expert: {e}")
@@ -236,6 +274,8 @@ class PlanningExpert:
             self.last_task_for_test = subtask_list[-1] # esto es solo para facilitar la prueba de casos en los test
             self.current_subtask = subtask_list[0]
 
+            self._save_chat_history_to_file()
+
             return self.current_subtask
 
 
@@ -274,9 +314,14 @@ class PlanningExpert:
 
             response = self.chat.send_message([prompt, screenshot])
 
+            prompt = DECOMPOSE_SUB_TASK_PROMPT_TEMPLATE_REFLECT
+            response = self.chat.send_message([prompt, screenshot])
+
             instruction_list_str = parse_llm_response(response.text)
             instruction_list = [task.strip() for task in instruction_list_str.split(';') if task.strip()]
             logger.info(f"These are the instructions for the task: {instruction_list}")
+
+            self._save_chat_history_to_file()
             
             return instruction_list
         

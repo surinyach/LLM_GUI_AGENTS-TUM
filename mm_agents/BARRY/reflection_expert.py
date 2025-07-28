@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
 from .utils import parse_llm_response
+from datetime import datetime
 
 
 logger = logging.getLogger("reflection_expert")
@@ -117,8 +118,30 @@ class ReflectionExpert:
         self.instruction_index = 0
         
         self.last_printed_index = 0 # this is for printing the chat history for debugging
+
+        # Set up log file directory and path
+        self.log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+        os.makedirs(self.log_dir, exist_ok=True)  # Create logs directory if it doesn't exist
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = os.path.join(self.log_dir, f'reflection_expert_history_{timestamp}.log')
     
-    
+    def _save_chat_history_to_file(self):
+        """
+        Saves the chat history to a log file since the last printed index.
+        Each message includes a timestamp, role, and content.
+        """
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                for i in range(self.last_printed_index, len(self.chat.history)):
+                    message = self.chat.history[i]
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    text_content = message.parts[0].text
+                    log_entry = f"[{timestamp}] {message.role}: {text_content}\n"
+                    f.write(log_entry)
+                self.last_printed_index = len(self.chat.history)
+        except Exception as e:
+            logger.error(f"Error saving chat history to file: {e}")
+            raise
 
     def set_subtask_and_instructions(self, subtask: str, instruction_list) -> None:
         """
@@ -155,6 +178,8 @@ class ReflectionExpert:
             self.chat.history.append(content_to_add)
             self.instruction_list = instruction_list
             self.instruction_index = 0
+
+            self._save_chat_history_to_file()
             
         
         except Exception as e:
@@ -180,6 +205,8 @@ class ReflectionExpert:
         """
         prompt = "Taking into account the last evaluation, respond only with the next instruction. don't add any comments."
         response =self.chat.send_message(prompt)
+        self._save_chat_history_to_file()
+
         return response.text
 
     def evaluate_execution(self, screenshot):
@@ -206,6 +233,8 @@ class ReflectionExpert:
             final_response = parse_llm_response(response.text)
 
             logger.info("Did the execution went well? " + final_response)
+            self._save_chat_history_to_file()
+
 
             return final_response.lower() == 'yes'
         
@@ -283,6 +312,8 @@ class ReflectionExpert:
             logger.info("This is the response of the reflection expert: " + response.text)
 
             final_response = parse_llm_response(response.text)
+            self._save_chat_history_to_file()
+
             return final_response
         
         except Exception as e:

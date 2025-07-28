@@ -119,6 +119,8 @@ class BarryAgent:
                 an instruction list. When we have the current subtask and instruction list we call reflection expert to save the subtask and instruction list.
                 
             """
+            logger.info("reflection planing: " + state["reflection_planning"])
+
             # case 1
             if self.first_iteration:
                 subtask = self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
@@ -128,7 +130,10 @@ class BarryAgent:
 
             # case 2
             elif state["reflection_planning"] == "finish":
-                done = self.planning_expert.is_main_task_done(self.SOM_screenshot)
+                done = self.planning_expert.is_main_task_done(self.screenshot)
+                logger.info("is main task done?:")
+                logger.info(done)
+
                 if done:
                     return {"done": True}
                 else:
@@ -207,7 +212,7 @@ class BarryAgent:
                 if is_last_instruction:
                     #logger"Sí es la última instrucción")
                     return {
-                        "reflection_planning": 'finish',
+                        "reflection_planning": "finish",
                         "reflection_action": ""
                     }
                 else:
@@ -329,6 +334,9 @@ class BarryAgent:
                 # logger.info(f"BarryAgent: Action decided by the agent: '{osworld_action_to_return}'")
                 pyautogui_instructions = [line for line in osworld_action_to_return.strip().splitlines() if line]
                 pyautogui_instructions.append("time.sleep(1)")
+                logger.info("instructions to execute")
+                logger.info(pyautogui_instructions)
+
                 return "Next action determined", pyautogui_instructions
             
             else:
