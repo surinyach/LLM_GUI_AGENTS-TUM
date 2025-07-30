@@ -69,6 +69,8 @@ class BarryAgent:
         self.SOM_screenshot = ""
         self.SOM_description = ""
 
+        self.sleep = False
+
         # LANG GRAPH
 
         # STATE --------------------------------------------------------------------
@@ -319,6 +321,12 @@ class BarryAgent:
                     "done": False,
                     "osworld_action": "",
                 }
+            if self.sleep:
+                logger.info("sleeeeep")
+                self.sleep = False
+                return "Task completed", ["time.sleep(1)"]
+            
+            self.sleep = True
 
             # If it's not the first iteration, the graph state is already saved from before
             final_state = self.graph.invoke(self.graph_state)
@@ -333,7 +341,7 @@ class BarryAgent:
             if osworld_action_to_return:
                 # logger.info(f"BarryAgent: Action decided by the agent: '{osworld_action_to_return}'")
                 pyautogui_instructions = [line for line in osworld_action_to_return.strip().splitlines() if line]
-                pyautogui_instructions.append("time.sleep(1)")
+                pyautogui_instructions.append("time.sleep(3)")
                 logger.info("instructions to execute")
                 logger.info(pyautogui_instructions)
 

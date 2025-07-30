@@ -13,87 +13,69 @@ SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE = "This is the subtask: '{subtask}'"
 
 
 FIRST_EVALUATE_EXECUTION_PROMPT = """
-You are an expert on evaluating execution of actions in GUI environments.
-
-I have executed this instruction: {instruction}
+Instruction: {instruction}
 
 Task:
-Analyze the attached screenshot to identify the active application, window state, and visible UI elements (e.g., search bars, tabs, buttons).
-Determine which elements are involved to verify if the instruction was successfully executed. Even if it is not very relationed you should take them into account.
-Reflect on the *intended outcome* of the instruction and describe the expected state of these elements after correct execution.
-For hotkey-based instructions (e.g., Ctrl+Shift+B to show a bookmark bar), assume the action succeeded even if the result is not visually distinct.
-Provide a clear description of the critical elements and their expected state.
+Identify active application, window state, and visible UI elements (e.g., search bars, tabs, buttons) from the screenshot.
+Determine critical UI elements relevant to the instruction's execution. Include elements even if indirectly related.
+Describe the *expected state* of these elements after successful execution, reflecting the instruction's intended outcome.
+For hotkey actions (e.g., Ctrl+Shift+B), assume success even if not visually distinct.
 
-Example:
-If the instruction is 'Click the browser's address bar,' the critical element is the address bar, which should be highlighted or show a blinking cursor after execution.
-Or if the instruction is to remove something, the current screen must not show the item to be a successful execution.
-
-Response:
-Description of the critical elements that need to be inspected to decide if the instruction has been acomplished. 
-Also add in the description in which is the expected state of every of these elements after the instruction has been correctly executed in the environment. 
+Output:
+Critical elements to inspect and their expected state after successful instruction execution.
+Additionally, if the screenshot suggests the screen is still loading (e.g., presence of a loading spinner, partial content, "Loading..." text, or a blank/white screen when content is expected), clearly state this.
 """
 
-SECOND_EVALUATE_EXECUTION_PROMPT="""
-You are an image analyzer expert.
-
+SECOND_EVALUATE_EXECUTION_PROMPT = """
 Task:
-From the elements identified in the previous analysis, select the most important ones based on their direct relevance to the instruction's goal
-(e.g., the address bar for a typing instruction, a new tab for Ctrl+T). Analyze the screenshot to determine the state of these elements. 
-Trust the screenshot for visible elements (e.g., buttons, tabs) and assume hotkey actions (e.g., Ctrl+Shift+B) succeeded even if the result is not visually distinct.
-If an element is ambiguous (e.g., multiple search bars), specify which one (e.g., 'the browser’s address bar').
-Provide a detailed description of the elements’ current state and reason whether it matches the expected state.
+From the previously identified elements, select the most important ones relevant to the instruction's goal (e.g., address bar for typing, new tab for Ctrl+T).
+Analyze the screenshot to determine their current state.
+Pay special attention to drag bars (sliders), verifying their exact position matches the expected state (e.g., if expected at maximum, ensure it's at the far right/top).
+Trust visible elements in the screenshot (e.g., buttons, tabs). Assume hotkey actions (e.g., Ctrl+Shift+B) succeeded if not visually distinct.
+If ambiguous (e.g., multiple search bars), specify (e.g., 'browser’s address bar').
 
-Response:
-Detailed description of the most important elements' current state and reasoning on whether it matches the expected state after the instruction.
+Output:
+Detailed description of the most important elements' current state and reasoning on whether it matches the expected state.
+
 """
 
-THIRD_EVALUATE_EXECUTION_PROMPT="""
+THIRD_EVALUATE_EXECUTION_PROMPT = """
 Task:
-Based on the previous analysis, the expected state of the elements, and the screenshot, determine if the instruction was successfully executed.
-The screenshot shows the state *after* the instruction, so evaluate success by checking for changes or absence of elements the instruction aimed to alter.
-Rely on screenshot evidence for visible changes (e.g., a new folder, a closed pop-up) and assume hotkey actions (e.g., Ctrl+T for a new tab) succeeded.
-If the instruction was to 'download a file,' check for the file in the downloads folder or a download indicator.
-For example:
+Determine if the instruction was successfully executed, based on the previous analysis, expected element states, and the screenshot.
+Evaluate success by checking for changes or absence of elements the instruction aimed to alter, as the screenshot shows the *after* state.
+Rely on screenshot for visible changes (e.g., new folder, closed pop-up). Assume hotkey actions (e.g., Ctrl+T) succeeded.
 
-* If the instruction was to "close the pop-up," and the pop-up is no longer visible on the screen, that indicates successful completion, not an error.
-* If the instruction was to "add a new folder," and a new folder is now visible, that indicates successful completion.
-* If the instruction was to "delete an item," and that item is no longer on the screen, that indicates successful completion.
-
-Here's how I want you to structure your response:
-1.  **Reasoning Process:** Write down your thought process here.
-2.  **Final answer:** You MUST respond only 'yes' or 'no' to indicate if the instruction was completed successfully based on the screen.
-                      The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
-
-Example of how the response should appear:
-RESPONSE: yes
+Output Structure:
+1. **Reasoning Process:** Your thought process.
+2. **Final Answer:** Respond 'yes' or 'no' on whether the instruction was successfully completed. Your response MUST start with 'RESPONSE:' on a new line.
 """
 
 EVALUATE_ERROR_PROMPT = """
-Tell me if the last error is a major or minor error. 
-Think about what you are looking for and see if the first link makes sense.
-Think also if this step is necessary for the main task {main_task}
-This is how you can classify an error:
+Task:
+Classify the last error as 'Minor' or 'Major' based on the definitions below, considering the current instruction: {instruction}.
+Additionally, if the screenshot suggests the screen is still loading (e.g., presence of a loading spinner, partial content, "Loading..." text, or a blank/white screen when content is expected), clearly state this.
 
-Minor: The instruction can still be completed in the current state of the screen with ONLY ONE INSTRUCTION, if more than one instruction is need it then It is a MAJOR!! For example:
- - the action agent has clicked the wrong button but with the current screen it is still possible to click the right button (only one instruction)
- - It has been typed the wrong word but you can still deleted and write the correct one (it is only one instruction)
- - The action expert couldn't click the right coordintates to move the slider but you can help him to aim better given the current position of the cursor.
- - The action expert had to click a link but it is needed to scroll down to be able to see the link
+Error Classification:
 
-Major: The instruction can not be completed anymore with the current state of the screen. For example:
- - The action expert clicked a button and the wrong page appeared.
- - The action expert tried to type on a search bar but the screen does not have a search bar
- - The action expert tried to click an icon that does not exist
+* *Minor:* The instruction can be completed from the current screen with only one additional instruction. If more than one instruction is needed, it's a Major error.
+    * Examples:
+        * Clicked the wrong button but the correct one is still visible (one instruction to click the right one).
+        * Typed the wrong word but can delete and retype (one instruction to correct).
+        * Couldn't click exact coordinates for a slider but can aim better from current cursor position.
+        * Needed to scroll to find a link that wasn't immediately visible.
+    * Note: You have 2 chances to resolve the same Minor error. If it persists, it becomes a Major error.
 
-You only have 2 chances in a row to solve the same minor error. If it keeps failing it is now a major error.
-Think if scrolling is needed to find what you are looking for
+* *Major:* The instruction cannot be completed from the current screen.
+    * Examples:
+        * Clicked a button, and the wrong page appeared (cannot revert or continue in one step).
+        * Tried to type on a search bar, but no search bar exists on the screen.
+        * Tried to click a non-existent icon.
 
-Here's how I want you to structure your response:
-1.  **Reasoning Process:** First, think step by step your thoughts. 
-2.  **Revised instruction:** After your reasoning, you MUST respond with what caused the error and different solutions to solve it.
-The response MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the response.
+Output Structure:
+1.  *Reasoning Process:* Step-by-step thoughts on error classification and potential solutions. Analyze the screenshot to inform your thoughts. Consider the main task and if scrolling is needed.
+2.  *Revised Instruction:* What caused the error and a solution to resolve it. The response MUST start with 'RESPONSE:' on a new line, followed by 'Minor:' or 'Major:' and your solution.
 
-Example of how the response should appear:
+Example of expected output:
 RESPONSE: Minor: You should click slightly more to the right.
 """
 
@@ -123,8 +105,8 @@ class ReflectionExpert:
         self.log_dir = os.path.join(os.path.dirname(__file__), 'logs')
         os.makedirs(self.log_dir, exist_ok=True)  # Create logs directory if it doesn't exist
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = os.path.join(self.log_dir, f'reflection_expert_history_{timestamp}.log')
-    
+        self.log_file = os.path.join(self.log_dir, f'chat_history_{timestamp}.log')
+
     def _save_chat_history_to_file(self):
         """
         Saves the chat history to a log file since the last printed index.
@@ -136,12 +118,15 @@ class ReflectionExpert:
                     message = self.chat.history[i]
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     text_content = message.parts[0].text
-                    log_entry = f"[{timestamp}] {message.role}: {text_content}\n"
+                    log_entry = f"[{timestamp}] {message.role} REFLECTION EXPERT: {text_content}\n"
                     f.write(log_entry)
+
                 self.last_printed_index = len(self.chat.history)
+
         except Exception as e:
             logger.error(f"Error saving chat history to file: {e}")
             raise
+    
 
     def set_subtask_and_instructions(self, subtask: str, instruction_list) -> None:
         """
@@ -175,16 +160,65 @@ class ReflectionExpert:
                 parts=[genai.protos.Part(text=content_message_string)]
             )
 
-            self.chat.history.append(content_to_add)
+            #self.chat.history.append(content_to_add)
             self.instruction_list = instruction_list
             self.instruction_index = 0
-
-            self._save_chat_history_to_file()
             
         
         except Exception as e:
             logger.error(f"Error in set_subtask_and_instructions() of reflection_expert: {e}")
             raise
+    
+
+    def evaluate_execution(self, screenshot):
+        """
+        Evaluates the success of an executed instruction by interacting with a language model
+        (LLM) in a multi-step conversational process.
+
+
+        Args:
+            self: The instance of the class, expected to have a `chat` object for sending messages
+                and an `instruction_list` with the `instruction_index` pointing to the current instruction.
+            screenshot: The image representing the state of the GUI after the instruction was executed.
+
+        Returns:
+            bool: True if the LLM determines the instruction was successfully completed ('yes'),
+                False otherwise ('no').
+        """
+        try:
+            prompt = FIRST_EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+            response = self.chat.send_message([prompt, screenshot])
+            response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
+            response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
+
+            final_response = parse_llm_response(response.text)
+
+            logger.info("Did the execution went well? " + final_response)
+
+            self._save_chat_history_to_file()
+            return final_response.lower() == 'yes'
+        
+        except Exception as e:
+            logger.error(f"Error in evaluate_execution: {e}")
+            raise
+    
+    def is_last_instruction(self) -> bool:
+        """
+        Checks if the current instruction being processed is the last one in the instruction list.
+
+        This function is crucial for controlling the flow of instruction execution,
+        allowing the system to determine when all planned steps have been completed.
+
+        Args:
+            self: The instance of the class, expected to have an `instruction_list`
+                (a list of instructions) and an `instruction_index` (the index
+                of the currently active instruction).
+
+        Returns:
+            bool: True if the `instruction_index` points to the last element of
+                `instruction_list`, False otherwise.
+        """
+        return len(self.instruction_list) - 1 == self.instruction_index
     
     def create_new_instruction(self):
         """
@@ -209,56 +243,6 @@ class ReflectionExpert:
 
         return response.text
 
-    def evaluate_execution(self, screenshot):
-        """
-        Evaluates the success of an executed instruction by interacting with a language model
-        (LLM) in a multi-step conversational process.
-
-
-        Args:
-            self: The instance of the class, expected to have a `chat` object for sending messages
-                and an `instruction_list` with the `instruction_index` pointing to the current instruction.
-            screenshot: The image representing the state of the GUI after the instruction was executed.
-
-        Returns:
-            bool: True if the LLM determines the instruction was successfully completed ('yes'),
-                False otherwise ('no').
-        """
-        try:
-            prompt = FIRST_EVALUATE_EXECUTION_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
-            response = self.chat.send_message([screenshot, prompt])
-            response = self.chat.send_message(SECOND_EVALUATE_EXECUTION_PROMPT)
-            response = self.chat.send_message(THIRD_EVALUATE_EXECUTION_PROMPT)
-
-            final_response = parse_llm_response(response.text)
-
-            logger.info("Did the execution went well? " + final_response)
-            self._save_chat_history_to_file()
-
-
-            return final_response.lower() == 'yes'
-        
-        except Exception as e:
-            logger.error(f"Error in evaluate_execution: {e}")
-            raise
-    
-    def is_last_instruction(self) -> bool:
-        """
-        Checks if the current instruction being processed is the last one in the instruction list.
-
-        This function is crucial for controlling the flow of instruction execution,
-        allowing the system to determine when all planned steps have been completed.
-
-        Args:
-            self: The instance of the class, expected to have an `instruction_list`
-                (a list of instructions) and an `instruction_index` (the index
-                of the currently active instruction).
-
-        Returns:
-            bool: True if the `instruction_index` points to the last element of
-                `instruction_list`, False otherwise.
-        """
-        return len(self.instruction_list) - 1 == self.instruction_index
     
     def get_next_instruction(self):
         """
@@ -306,14 +290,13 @@ class ReflectionExpert:
         """
         try:
 
-            prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index], main_task = main_task)
-            response =self.chat.send_message([prompt, screenshot])
+            prompt = EVALUATE_ERROR_PROMPT.format(instruction = self.instruction_list[self.instruction_index])
+            response =self.chat.send_message([screenshot, prompt])
 
             logger.info("This is the response of the reflection expert: " + response.text)
 
             final_response = parse_llm_response(response.text)
             self._save_chat_history_to_file()
-
             return final_response
         
         except Exception as e:

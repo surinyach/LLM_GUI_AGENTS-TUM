@@ -11,26 +11,24 @@ logger = logging.getLogger("planning_expert")
 
 DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE = """
 This is the main task: "{main_task}"
-Decompose it into a list of subtasks. The subtask must be goals and they should be used for guidance. 
+Give me the first subtask to acoplish the main task The subtask must be goals and they should be used for guidance. 
 Avoid subtasks that involve taking screenshots, locating elements, or recording coordinates, as the agent has screen markers for execution. 
 Identify the active application or window in the screenshot to ensure subtasks align with the current context (e.g., browser, file explorer). 
 Do not include a final subtask like 'Finish the task'; each subtask must be meaningful.
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:** Write down your thought process here.
-2.  **Final Subtasks:** After your reasoning, you MUST provide the final list of subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks.
-    All text from "RESPONSE:" until the end of your response will be considered the list of subtasks. Each subtask should be separated by a semicolon ';'.
+2.  **Final Subtasks:** The subtask MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtask.
 """
 
 RETHINK_SUBTASK_PROMPT_TEMPLATE = """
-Re-evaluate the subtask list for the main task: "{main_task}".
+Give me the next subtask to acomplish the main task.
 Do not repeat approaches that failed, as indicated by this feedback (if any): {reflection_expert_feedback}.
-If the current subtask "{current_subtask}" was completed successfully, determine the remaining steps.
+If the current subtask "{current_subtask}" was completed successfully, determine the next subtask.
 Analyze the screenshot to identify the active application, visible elements (e.g., browser tabs, search bars), and current state.
-Decompose it into a list of subtasks. The subtask must be goals and they should be used for guidance. They are not instructions to perform the task. 
+The subtask must be a goal and it should be used for guidance. It is not a instruction to perform the task. 
 Avoid subtasks that involve taking screenshots, locating elements, or recording coordinates, as the agent has screen markers for execution. 
-Identify the active application or window in the screenshot to ensure subtasks align with the current context (e.g., browser, file explorer). 
-Do not include a final subtask like 'Finish the task'; each subtask must be meaningful.
+Identify the active application or window in the screenshot to ensure subtask aligns with the current context (e.g., browser, file explorer). 
 
 Reasoning Process:
 1. Review the feedback (if any) to identify what went wrong or what subtask was completed.
@@ -41,7 +39,7 @@ Reasoning Process:
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:**  Write down your thought process here.
-2.  **Revised Subtask List:** After your reasoning, you MUST provide the revised list of remaining subtasks. This list MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtasks. All text from "RESPONSE:" until the end of your response will be considered the revised list of subtasks. Each subtask should be separated by a semicolon ';'.
+2.  **Final Subtask:** The subtask MUST start with the exact phrase "RESPONSE:" on its own line, followed immediately by the subtask.
 """
 
 
@@ -50,19 +48,16 @@ Decompose the subtask "{current_subtask}" into detailed, actionable instructions
 IMPORTANT THINGS TO TAKE INTO ACCOUNT:
 0. There is no need to decompose a sequence of keys in different instructions. In pyAutoGUI you can press different keys at the same time and it does not need different instructions.
 1. Analyze the screenshot to identify the active application, visible elements (e.g., address bar, search bar, buttons), and window state. 
-2. ONLY Maximize the window if it is not maximized. (you can decide from the screenshot)
-3. Prefer keyboard shortcuts or hotkeys (e.g., Ctrl+T to open a new tab, Ctrl+A to select text) to ensure reliability, especially for elements without clear text or buttons. 
+3. Think about how to execute the instruction using combination of hotkeys. 
 4. Combine related actions (e.g., click, select text with Ctrl+A, type and press enter) into a SINGLE instruction (NOT SEPARATED WITH ';') where appropriate. 
    If there is text were it should be clicked there is no need to use hotkeys as the llm is good clicking where there is text! in the SAME instruction, not in different instructions 
 5. Avoid instructions for screenshots, locating elements, or recording coordinates, as the agent has screen markers. 
 6. If an element is ambiguous (e.g., multiple search bars), specify which one (e.g., 'the browser's address bar').
 7. Do not make any instruction of release button as in pyAutoGUI there is not such instruction.
 8. Do not put 'if' in instructions, you are being passed a screenshot. You decide what to do.
+9. Remember that if there is text on a text box you will have to do ctrl + A before typing the new text
 
-
-These steps do not need to be overly precise if the environment details are not fully known yet.
-However think that this steps will have to be translated into pyAutoGUI actions so it is not necessary to say
-move the mouse to th icon. As in pyAutoGUI you give the coordinates when you click.
+If it is need it to click on a place where there is no icon or text describe its position referencing a place where there is text or a icon.
 
 Here's how I want you to structure your response:
 1.  **Reasoning Process:** Write down your thought process here and the first version of your answer.
@@ -75,12 +70,11 @@ RESPONSE: Click on the browser icon; Click on the search bar and Type dogs.
 
 DECOMPOSE_SUB_TASK_PROMPT_TEMPLATE_REFLECT = """
 Reflect Questions:
-1. ONLY If the window was not maximized, was a instruction to maximize it included?
 2. For actions like opening new tabs, saving, selecting all text, or maximizing/minimizing windows, have keyboard shortcuts (e.g., Ctrl+T, Ctrl+S, Ctrl+A) been used instead of mouse clicks where applicable? (if there is a text on the area where it should be clicked there is no need of using hotkeys)
 3. Were hotkeys used for actions where visual recognition might be difficult (e.g., an empty bookmark bar, using Ctrl+Shift+B to make it visible)?
 4. Are the chosen hotkeys standard and widely applicable for the identified active application?
 5. Are there any instructions that instruct the agent to "take a screenshot," "locate the X icon," or "find the coordinates of the button"? (There should not been)
-6. Are there instructions in separated instructions like click and type that could be together? (instructions like click and type MUST be in the same instruction, not separated by a ;)
+6. Some steps could be performed secuentally without needing to get another screenshot, put them in the same instruction (steps like click and type MUST be in the same instruction, not separated by a ;)
 7. Do any of the instructions include instructions to "release" a key or mouse button?
 8. Are there any 'if' in the instructions? (it should not be)
 
@@ -96,6 +90,7 @@ RESPONSE: Click on the browser icon; Click on the search bar and Type dogs.
 IS_LAST_TASK_PROMPT_TEMPLATE = """
 The subtask "{current_subtask}" was completed successfully.
 The main task is: "{main_task}".
+Analize if there is still need to press a save or done button or click outside th text box
 Analyze the screenshot to verify if the main task is complete (e.g., check for a downloaded file, specific UI state, or visible result).
 Respond with 'yes' if the main task is fully accomplished, or 'no' if additional steps are needed.
 
@@ -135,7 +130,7 @@ class PlanningExpert:
         self.log_dir = os.path.join(os.path.dirname(__file__), 'logs')
         os.makedirs(self.log_dir, exist_ok=True)  # Create logs directory if it doesn't exist
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = os.path.join(self.log_dir, f'planning_expert_history_{timestamp}.log')
+        self.log_file = os.path.join(self.log_dir, f'chat_history_{timestamp}.log')
     
     def _save_chat_history_to_file(self):
         """
@@ -148,7 +143,7 @@ class PlanningExpert:
                     message = self.chat.history[i]
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     text_content = message.parts[0].text
-                    log_entry = f"[{timestamp}] {message.role}: {text_content}\n"
+                    log_entry = f"[{timestamp}] {message.role} PLANNING EXPERT: {text_content}\n"
                     f.write(log_entry)
                 self.last_printed_index = len(self.chat.history)
         except Exception as e:

@@ -8,92 +8,66 @@ logger = logging.getLogger("action_expert")
 
 # PROMPTS
 FIRST_PROMPT="""
-You are an image recognision expert.
-
 Instruction:
-
 {instruction}
 
 Feedback:
-
-If this is not the first time trying to execute this instruction, the reflection expert of the system gives feedback of previous executions.
-Consequently, if there is an error and a way to solve it within this section you must take it into account to avoid commiting the same mistakes.
-
+Consider any previous execution errors and solutions provided in this section to avoid repeating mistakes:
 {Reflection_feedback}
 
 Task:
-
-Given the attached screenshot, reason what is needed to be done to accomplish the instruction inlcuded before.
+Given the attached screenshot, describe the necessary actions to accomplish the instruction.
 
 Response:
-
-Give a brief and detailed description of the actions that need to be done to do the instruction. The format needs to be a text. 
+Provide a clear, concise, and detailed description of the actions to be performed.
 """
 
 SECOND_PROMPT="""
-You are an image element recognision expert.
-
 SOM Element Description:
-
 {SOM_description}
 
 Task:
-
-Recognise the boxes that are related with the instruction and the actions needed to solve it obtained in the previous query. 
-Take into account that the number of the boxes are random, related boxes don't need to have related numbers too. 
-Use also the SOM description of each element to elaborate the response, you must know that the name of the icon is not always accurate. 
-It tends to be wrong for the interactive element of the drag boxes.
+From the SOM description, identify boxes relevant to accomplishing the instruction and the actions from the previous query.
+Note: Box numbers are random and not necessarily related. Element names in the SOM description may not always be accurate, especially for drag bar interactive elements.
 
 Response:
-
-Give me the related boxes, with a description of why are important to solve the instruction. Include the number of each box if visible.
-If the number is not visible, but the correct box is present inside the picture, do not discard it.
+List the relevant boxes, including their visible numbers. For each box, describe why it is important to solve the instruction. 
+Do not discard relevant boxes even if their number is not visible in the image.
 """
 
 THIRD_PROMPT="""
-You are an image element recognision expert.
-
 Task:
-
 Taking into account the previous query, tell me which of the boxes I need to interact with to solve the instruction.
+Also, consider that the precise interactive element might not always be represented as a distinct box in the SOM but could be in close proximity to a highly related box. 
+Leverage your VLM capabilities to identify such unboxed but critical interaction areas by analyzing the screenshot.
 
 Response:
-
-The box of the SOM image which I need to use, with the justification of why did you chose this box among the other candidates. 
+The box of the SOM image which I need to use, with the justification of why did you chose this box among the other candidates.
 """
 
 FOURTH_PROMPT="""
 Screen resolution:
-
 {Screen_resolution}
 
 Task:
-
-Give me the coordinates of the center of the box you chose in the previous instruction. 
-Take into account that the coordinates in the SOM description represent the upper left vertex of the box and the bottom right vertex of the box. 
-All the coordinates are relative to the actual resolution of the screen.
+Calculate the center coordinates (x, y) of the box chosen in the previous instruction.
+Note: SOM description coordinates are (upper_left_x, upper_left_y, bottom_right_x, bottom_right_y) and are relative to the screen resolution.
 
 Response:
-
-The coordinates of the center of the box, the box chosen, in pixel format taking into acount the screen resolution and the coordinates of the vertexs in the SOM description given in the previous querys. 
+Provide the center coordinates (x, y) of the chosen box in pixel format, considering the screen resolution and the SOM vertex coordinates.
 """
 
 FIFTH_PROMPT="""
-You are an expert in pyautogui code generation.
-
 Task:
-
-Taking into account the coordinates generated in the previous query. Give me the pyautogui code necessary to solve the instruction.
+Generate the necessary PyAutoGUI code to solve the instruction, using the coordinates from the previous query.
 
 Supported pyautogui actions:
-
 * `pyautogui.click(x, y)`
 * `pyautogui.doubleClick(x, y)`
 * `pyautogui.rightClick(x, y)`
-* Dragging:
-- You will need two instructions to drag:
-* `pyautogui.moveTo(x1,y1)` (starting position)
-* `pyautogui.dragTo(x2, y2, duration=duration, button=button)` (ending position)
+* Dragging (requires two instructions):
+    * `pyautogui.moveTo(x1, y1)` (starting position)
+    * `pyautogui.dragTo(x2, y2, duration=duration, button=button)` (ending position)
 * `pyautogui.typewrite('text')`
 * `pyautogui.press('key')`
 * `pyautogui.hotkey('ctrl', 'c')`
@@ -101,9 +75,8 @@ Supported pyautogui actions:
 * `time.sleep(seconds)`
 
 Response format:
-
-Respond with one or a list of valid PyAutoGUI code.  All coordinates in the output must be in pixels (integers). 
-Do not include comments or imports, **only** pyautogui instructions. If you return more than one instruction, write one instruction per line ('\n' after each pyautogui instruction)
+Respond with one or a list of valid PyAutoGUI code. All coordinates in the output must be in pixels (integers).
+Do not include comments or imports, **only** pyautogui instructions. If multiple instructions, write one instruction per line.
 """
 
 class ActionExpert:
@@ -152,9 +125,9 @@ class ActionExpert:
             action(str): pyautogui code that needs to be executed within osworld environment.
         """
         try:
-            # logger.info("Process Instruction inside the Action Expert")
+            logger.info("Process Instruction inside the Action Expert")
             first_prompt = FIRST_PROMPT.format(instruction=self.current_instruction, Reflection_feedback=reflection_feedback)
-            # logger.info("CURRENT INSTRUCTION INSIDE THE ACTION: " + self.current_instruction)
+            logger.info("CURRENT INSTRUCTION INSIDE THE ACTION: " + self.current_instruction)
             action = self.chat.send_message([new_screenshot, first_prompt])
             second_prompt = SECOND_PROMPT.format(SOM_description=new_som_description)
             action = self.chat.send_message([new_som_screenshot, second_prompt])
