@@ -15,6 +15,7 @@ This project was developed as part of the practical course _**Development of LLM
   - [3. Perception Expert Configuration](#3-perception-expert-configuration)
 - [⚙️ Execution](#️-execution)
 - [🔄 Reproducing Evaluated Tasks](#-reproducing-evaluated-tasks)
+- [🛠️ Troubleshooting](#️-troubleshooting)
 - [👥 Authors](#-authors)
 
 ---
@@ -138,6 +139,47 @@ python run_barry.py \
   --task [TASK_ID_FROM_REPORT]
 ```
 
+---
+
+## 🛠️ Troubleshooting
+
+### Missing Logs Directory
+
+**Issue:** Execution fails with directory-related errors.
+
+**Solution:** Make sure to create a `logs` directory within the OSWorld root directory before running Barry Agent. The agent requires this directory to store execution logs and will fail if it doesn't exist.
+
+```bash
+mkdir logs  # Run this command in the OSWorld root directory
+```
+
+### OmniParser Server URL Configuration
+
+**Issue:** Execution fails with URL-related errors when connecting to the OmniParser server.
+
+**Solution:** Ensure that the `OMNIPARSER_SERVER_URL` in your `.env` file does **NOT** end with a trailing slash (`/`). This will cause connection errors.
+
+**❌ Incorrect:**
+```env
+OMNIPARSER_SERVER_URL=https://YOURDOMAIN:8000/
+```
+
+**✅ Correct:**
+```env
+OMNIPARSER_SERVER_URL=https://YOURDOMAIN:8000
+```
+
+### OmniParser Server Connectivity
+
+**Issue:** Execution fails during the perception expert stage with connection timeouts or unreachable server errors.
+
+**Solution:** Verify that your OmniParser server is running and accessible before executing Barry Agent. You can test connectivity using:
+
+```bash
+curl -I https://YOURDOMAIN:8000/probe
+```
+
+Make sure your server is properly deployed and the specified port is open and accessible from your execution environment.
 
 ---
 
