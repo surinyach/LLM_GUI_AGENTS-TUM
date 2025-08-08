@@ -69,6 +69,8 @@ class BarryAgent:
         self.SOM_screenshot = ""
         self.SOM_description = ""
 
+        self.sleep = False
+
         # LANG GRAPH
 
         # STATE --------------------------------------------------------------------
@@ -119,6 +121,8 @@ class BarryAgent:
                 an instruction list. When we have the current subtask and instruction list we call reflection expert to save the subtask and instruction list.
                 
             """
+            logger.info("reflection planing: " + state["reflection_planning"])
+
             # case 1
             if self.first_iteration:
                 subtask = self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
@@ -128,7 +132,10 @@ class BarryAgent:
 
             # case 2
             elif state["reflection_planning"] == "finish":
-                done = self.planning_expert.is_main_task_done(self.SOM_screenshot)
+                done = self.planning_expert.is_main_task_done(self.screenshot)
+                logger.info("is main task done?:")
+                logger.info(done)
+
                 if done:
                     return {"done": True}
                 else:
@@ -141,8 +148,6 @@ class BarryAgent:
             # This has to be done after every case:
             instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
             #loggerf"These are the instructions for the task: {instruction_list}")
-
-
 
             self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
             self.action_expert.set_current_instruction(instruction_list[0])
@@ -207,7 +212,7 @@ class BarryAgent:
                 if is_last_instruction:
                     #logger"Sí es la última instrucción")
                     return {
-                        "reflection_planning": 'finish',
+                        "reflection_planning": "finish",
                         "reflection_action": ""
                     }
                 else:
@@ -314,6 +319,12 @@ class BarryAgent:
                     "done": False,
                     "osworld_action": "",
                 }
+            if self.sleep:
+                logger.info("sleeeeep")
+                self.sleep = False
+                return "Task completed", ["time.sleep(1)"]
+            
+            self.sleep = True
 
             # If it's not the first iteration, the graph state is already saved from before
             final_state = self.graph.invoke(self.graph_state)
@@ -328,7 +339,9 @@ class BarryAgent:
             if osworld_action_to_return:
                 # logger.info(f"BarryAgent: Action decided by the agent: '{osworld_action_to_return}'")
                 pyautogui_instructions = [line for line in osworld_action_to_return.strip().splitlines() if line]
-                pyautogui_instructions.append("time.sleep(1)")
+                logger.info("instructions to execute")
+                logger.info(pyautogui_instructions)
+
                 return "Next action determined", pyautogui_instructions
             
             else:
