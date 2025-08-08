@@ -121,7 +121,6 @@ class PlanningExpert:
 
         self.chat = self.model.start_chat(history=[])
         self.last_printed_index = 0 # this is for printing the chat history for debugging
-        self.last_task_for_test = "" # this is for the tests
 
         self.main_task = ""
         self.current_subtask = ""
@@ -233,10 +232,9 @@ class PlanningExpert:
         for instance, due to an execution error, or after the successful completion of a previous subtask. 
         It constructs a prompt for a language model (LLM), providing it with `reflection_expert_feedback`, 
         the `self.current_subtask` just processed, the overall `self.main_task`, and the current `screenshot`.
-        The LLM is tasked with generating a new, updated sequence of subtasks based on this comprehensive context.
+        The LLM is tasked with generating a new, updated subtask based on this comprehensive context.
 
-        The first subtask from this newly generated list is then set as
-        `self.current_subtask`, effectively updating the active task for the agent.
+        The  newly generated subtask is then set as `self.current_subtask`, effectively updating the active task for the agent.
 
         Args:
             self: The instance of the class, providing access to `chat` for LLM interaction,
@@ -249,8 +247,7 @@ class PlanningExpert:
                         to the LLM for rethinking the plan.
 
         Returns:
-            str: The first subtask from the newly generated list of subtasks, which
-                 becomes the new `self.current_subtask`.
+            str: The new subtask which becomes the new `self.current_subtask`.
         """
         try:
             prompt = RETHINK_SUBTASK_PROMPT_TEMPLATE.format(
@@ -319,114 +316,6 @@ class PlanningExpert:
             logger.error(f"Error in decompose_subtask() of planning_expert: {e}")
             raise
     
-    def _set_current_task_as_last(self):
-        self.current_subtask = self.last_task_for_test
-    
-    def _print_history(self):
-        """
-        Prints new messages from the chat history to the console since the last print.
-
-        This internal helper function iterates through the `chat.history` list, starting
-        from the `last_printed_index`. It prints each new message, formatted to show
-        its role (e.g., 'user', 'model') and the text content. After printing, it updates
-        `last_printed_index` to the current total number of messages in the history,
-        ensuring that only new messages are printed in subsequent calls.
-
-        Args:
-            self: The instance of the class, expected to have a `chat` object with a
-                `history` attribute (a list of message objects) and a `last_printed_index`
-                attribute (an integer tracking the last printed message's index).
-
-        Returns:
-            None: This function performs side effects by printing to standard output
-                and modifying `self.last_printed_index`.
-        """
-        for i in range(self.last_printed_index, len(self.chat.history)):
-            message = self.chat.history[i]
-            text_content = message.parts[0].text 
-            print(f"{message.role}: {{ \"{text_content}\" }}")
-        
-        self.last_printed_index = len(self.chat.history)
-
-    
 
 if __name__ == "__main__":
-    current_dir = os.path.dirname(__file__) # Obtiene el directorio del script actual
-    image_folder = os.path.join(current_dir, 'mocks')
-
-    planning_expert = PlanningExpert()
-    main_task = "descarga una foto de un perro"
-
-    # caso 1 --------------------------------
-    image_name = 'som_screenshot_1.png'
-    image_path = os.path.join(image_folder, image_name)
-    SOM = Image.open(image_path)
-
-    print("caso 1, main task:", main_task)
-    subtask = planning_expert.decompose_main_task(main_task, SOM)
-    instruction_list = planning_expert.decompose_subtask(SOM)
-
-    planning_expert._print_history()
-    print("esta es la primera subtarea: " + subtask + "\n")
-    print("esta es la lista de instrucciones: ", instruction_list)
-
-
-
-    print("caso 1 terminado -----------------------------------------------\n")
-
-    # caso 2.1 --------------------------------
-    image_name = 'som_screenshot_2.png'
-    image_path = os.path.join(image_folder, image_name)
-    SOM = Image.open(image_path)
-
-    print("caso 2.1: tarea no está acabada")
-    done = planning_expert.is_main_task_done(SOM)
-    if done:
-        print("return {'done': True}")
-    else:
-        subtask = planning_expert.rethink_subtask("", SOM)
-    
-    instruction_list = planning_expert.decompose_subtask(SOM)
-    
-    planning_expert._print_history()
-
-
-    print("caso 2.1 terminado -----------------------------------------------\n")
-
-    
-    # caso 3 --------------------------------
-
-    image_name = 'som_screenshot_3.png'
-    image_path = os.path.join(image_folder, image_name)
-    SOM = Image.open(image_path)
-
-    reflection_expert_feedback = """
-    the task it is not done, it has click on video section instead of the image section. 
-    It should press the image section and then download a photo.
-    """
-
-    planning_expert._set_current_task_as_last()
-
-    print("caso 3: Ha acabado la lista pero el reflection expert dice que no está bien acabada")
-
-    subtask = planning_expert.rethink_subtask(reflection_expert_feedback, SOM)
-
-    planning_expert._print_history()
-
-    print("caso 3 terminado -----------------------------------------------\n")
-
-    # caso 2.2 --------------------------------
-
-    print("caso 2.2: tarea sí está acabada")
-    planning_expert._set_current_task_as_last()
-    done = planning_expert.is_main_task_done(SOM)
-    if done:
-        print("return {'done': True}")
-    else:
-        subtask = planning_expert.rethink_subtask("", SOM)
-    
-    planning_expert._print_history()
-    
-    print("caso 2.2 terminado -----------------------------------------------\n")
-
-
+    pass
