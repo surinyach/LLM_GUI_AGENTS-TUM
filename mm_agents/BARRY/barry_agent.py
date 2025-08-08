@@ -113,7 +113,7 @@ class BarryAgent:
                     The planning expert returns the inmediate first task of the new subtask list.
 
                 case 3: There is an error. Either execution error during the instruction list or because refelction expert don't think it is finished:
-                    It only calls the function rethink_subtask_list() but with the reflection_expert_feedback and the action_expert_feedback.
+                    It only calls the function rethink_subtask() but with the reflection_expert_feedback and the action_expert_feedback.
                     It is the same function as the case 2. The planning expert creates a new subtask list and returns the first subtask.
 
                 Common actions:
@@ -125,9 +125,7 @@ class BarryAgent:
 
             # case 1
             if self.first_iteration:
-                subtask = self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
-                #loggerf"The planning expert decomposes the main task. This is the first subtask: {subtask}")
-
+                self.planning_expert.decompose_main_task(self.main_task, self.screenshot)
                 self.first_iteration = False
 
             # case 2
@@ -139,11 +137,11 @@ class BarryAgent:
                 if done:
                     return {"done": True}
                 else:
-                   subtask = self.planning_expert.rethink_subtask_list("", self.screenshot)
+                   self.planning_expert.rethink_subtask("", self.screenshot)
                    
             # case 3
             else:
-                subtask = self.planning_expert.rethink_subtask_list(state["reflection_planning"], self.screenshot)
+                self.planning_expert.rethink_subtask(state["reflection_planning"], self.screenshot)
 
             # This has to be done after every case:
             instruction_list = self.planning_expert.decompose_subtask(self.screenshot)
@@ -151,7 +149,7 @@ class BarryAgent:
 
 
 
-            self.reflection_expert.set_subtask_and_instructions(subtask, instruction_list)
+            self.reflection_expert.set_subtask_and_instructions(instruction_list)
             self.action_expert.set_current_instruction(instruction_list[0])
 
         def action_expert(state: State):
@@ -204,23 +202,18 @@ class BarryAgent:
                     - It was a minor error: {reflection_action: error and how to solve it}
                     - It was a major error: {reflection_planning: error and how to solve it}
             """
-            #logger"evaluo si ha habido errores")
             successful = self.reflection_expert.evaluate_execution(self.screenshot)
 
             # case 1
             if successful:
-                #logger"no ha habido errores \n")
                 is_last_instruction = self.reflection_expert.is_last_instruction()
                 if is_last_instruction:
-                    #logger"Sí es la última instrucción")
                     return {
                         "reflection_planning": "finish",
                         "reflection_action": ""
                     }
                 else:
-                    #logger"no es la última instrucción")
                     next_instruction = self.reflection_expert.get_next_instruction()
-                    #loggerf"esta es la siguiente instrucción {next_instruction}")
                     self.action_expert.set_current_instruction(next_instruction)
                     return {
                         "reflection_planning": "",
@@ -228,9 +221,7 @@ class BarryAgent:
                     }
             
             # case 2
-            #logger"SÍ ha habido errores \n")
-            evaluated_error = self.reflection_expert.evaluate_error(self.screenshot, self.main_task)
-            #loggerf"esta es la evaluación del error: {evaluated_error}")
+            evaluated_error = self.reflection_expert.evaluate_error(self.screenshot)
             if evaluated_error.startswith("Minor:"):
                 new_instruction = self.reflection_expert.create_new_instruction()
                 self.action_expert.set_current_instruction(new_instruction)

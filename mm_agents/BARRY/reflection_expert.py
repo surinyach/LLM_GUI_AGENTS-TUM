@@ -9,9 +9,6 @@ from datetime import datetime
 
 logger = logging.getLogger("reflection_expert")
 
-SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE = "This is the subtask: '{subtask}'"
-
-
 FIRST_EVALUATE_EXECUTION_PROMPT = """
 Instruction: {instruction}
 
@@ -128,7 +125,7 @@ class ReflectionExpert:
             raise
     
 
-    def set_subtask_and_instructions(self, subtask: str, instruction_list) -> None:
+    def set_subtask_and_instructions(self, instruction_list) -> None:
         """
         Saves the instruction_list and adds the current subtask to the chat history.
 
@@ -150,31 +147,16 @@ class ReflectionExpert:
                   a user message, and it updates `self.instruction_list` and
                   `self.instruction_index`.
         """
-        try:
-            content_message_string = SUBTASK_INSTRUCTIONS_CONTENT_TEMPLATE.format(
-                subtask=subtask,
-            )
-            
-            content_to_add = genai.protos.Content(
-                role='user',
-                parts=[genai.protos.Part(text=content_message_string)]
-            )
 
-            #self.chat.history.append(content_to_add)
-            self.instruction_list = instruction_list
-            self.instruction_index = 0
-            
-        
-        except Exception as e:
-            logger.error(f"Error in set_subtask_and_instructions() of reflection_expert: {e}")
-            raise
+        self.instruction_list = instruction_list
+        self.instruction_index = 0
+
     
 
     def evaluate_execution(self, screenshot):
         """
         Evaluates the success of an executed instruction by interacting with a language model
         (LLM) in a multi-step conversational process.
-
 
         Args:
             self: The instance of the class, expected to have a `chat` object for sending messages
@@ -263,14 +245,14 @@ class ReflectionExpert:
         self.instruction_index += 1
         return self.instruction_list[self.instruction_index]
     
-    def evaluate_error(self, main_task, screenshot):
+    def evaluate_error(self, screenshot):
         """
         Evaluates a detected error by querying a language model (LLM) to classify it
         as minor or major and suggest solutions.
 
-        This function sends the current instruction, the main task, and a screenshot
-        to the LLM. The LLM then provides a detailed response that includes a reasoning
-        process, identifies the cause of the error, and proposes solutions. The error
+        This function sends the current instruction, and a screenshot to the LLM. 
+        The LLM then provides a detailed response that includes a reasoning process, 
+        identifies the cause of the error, and proposes solutions. The error
         classification (minor or major) is based on specific criteria defined in the
         `EVALUATE_ERROR_PROMPT`, primarily whether the error can be resolved with a
         single follow-up instruction.
@@ -278,8 +260,6 @@ class ReflectionExpert:
         Args:
             self: The instance of the class, providing access to the `chat` object
                 for LLM interaction and the `instruction_list` with the current `instruction_index`.
-            main_task (str): A description of the overall main task, used by the LLM
-                            for context in evaluating the necessity of steps.
             screenshot: The image representing the current state of the GUI where the
                         error occurred.
 

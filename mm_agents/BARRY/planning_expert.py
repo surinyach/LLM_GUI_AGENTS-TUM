@@ -29,6 +29,7 @@ Analyze the screenshot to identify the active application, visible elements (e.g
 The subtask must be a goal and it should be used for guidance. It is not a instruction to perform the task. 
 Avoid subtasks that involve taking screenshots, locating elements, or recording coordinates, as the agent has screen markers for execution. 
 Identify the active application or window in the screenshot to ensure subtask aligns with the current context (e.g., browser, file explorer). 
+If there is NOTHING to do because the main task is done make an instruction with an sleep of 1 second.
 
 Reasoning Process:
 1. Review the feedback (if any) to identify what went wrong or what subtask was completed.
@@ -56,6 +57,7 @@ IMPORTANT THINGS TO TAKE INTO ACCOUNT:
 7. Do not make any instruction of release button as in pyAutoGUI there is not such instruction.
 8. Do not put 'if' in instructions, you are being passed a screenshot. You decide what to do.
 9. Remember that if there is text on a text box you will have to do ctrl + A before typing the new text
+
 
 If it is need it to click on a place where there is no icon or text describe its position referencing a place where there is text or a icon.
 
@@ -152,14 +154,13 @@ class PlanningExpert:
     
     def decompose_main_task(self, main_task, screenshot):
         """
-        Receives the main task and uses an LLM to generate a list of subtasks.
+        Receives the main task and uses an LLM to generate the first subtask.
 
         This function initiates the planning phase by instructing a language model (LLM)
         to break down a high-level `main_task` into smaller, manageable subtasks.
-        The LLM is specifically prompted to provide these subtasks separated by semicolons.
+        The LLM is specifically prompted to provide the first subtask.
         The `main_task` and the screenshot representing the current GUI
         state are sent to the LLM to provide necessary context for decomposition.
-        The LLM's raw text response is then parsed into a list of individual subtasks.
         The first generated subtask is stored as `self.current_subtask` and is also
         returned as the initial subtask for subsequent action or execution.
 
@@ -169,7 +170,7 @@ class PlanningExpert:
             interactive context to the LLM during the task decomposition process.
 
         Returns:
-            str: The first subtask from the newly generated list of subtasks.
+            str: The first subtask from the main task.
         """
 
         try:
@@ -177,14 +178,11 @@ class PlanningExpert:
             prompt = DECOMPOSE_MAIN_TASK_PROMPT_TEMPLATE.format(main_task=main_task)
             response = self.chat.send_message([prompt, screenshot])
 
-            subtasks_raw_string = parse_llm_response(response.text)
-            
-            # Split by semicolon and clean each individual task.
-            subtask_list = [task.strip() for task in subtasks_raw_string.split(';') if task.strip()]
-        
-            logger.info(f"These are the subtasks created by the planning expert: {subtask_list}")
+            subtask = parse_llm_response(response.text)
+                    
+            logger.info(f"This is the subtask created by the planning expert: {subtask}")
 
-            self.current_subtask = subtask_list[0]
+            self.current_subtask = subtask
 
             self._save_chat_history_to_file()
 
@@ -227,7 +225,7 @@ class PlanningExpert:
             logger.error(f"Error in is_main_task_done() of planning_expert: {e}")
             raise
 
-    def rethink_subtask_list(self, reflection_expert_feedback: str, screenshot) -> None:
+    def rethink_subtask(self, reflection_expert_feedback: str, screenshot) -> None:
         """
         Revises the current planning of subtasks based on feedback and the current GUI state.
 
@@ -262,20 +260,17 @@ class PlanningExpert:
             )
             response = self.chat.send_message([prompt, screenshot])
 
-            subtask_list_str = parse_llm_response(response.text)
-            # Split by semicolon and clean each individual task.
-            subtask_list = [task.strip() for task in subtask_list_str.split(';') if task.strip()]
+            subtask = parse_llm_response(response.text)
 
-            self.last_task_for_test = subtask_list[-1] # esto es solo para facilitar la prueba de casos en los test
-            self.current_subtask = subtask_list[0]
+            self.current_subtask = subtask
 
             self._save_chat_history_to_file()
 
-            return self.current_subtask
+            return subtask
 
 
         except Exception as e:
-            logger.error(f"Error in rethink_subtask_list() of planning_expert: {e}")
+            logger.error(f"Error in rethink_subtask() of planning_expert: {e}")
             raise
     
     def decompose_subtask(self, screenshot) -> str:
@@ -389,7 +384,7 @@ if __name__ == "__main__":
     if done:
         print("return {'done': True}")
     else:
-        subtask = planning_expert.rethink_subtask_list("", SOM)
+        subtask = planning_expert.rethink_subtask("", SOM)
     
     instruction_list = planning_expert.decompose_subtask(SOM)
     
@@ -414,7 +409,7 @@ if __name__ == "__main__":
 
     print("caso 3: Ha acabado la lista pero el reflection expert dice que no está bien acabada")
 
-    subtask = planning_expert.rethink_subtask_list(reflection_expert_feedback, SOM)
+    subtask = planning_expert.rethink_subtask(reflection_expert_feedback, SOM)
 
     planning_expert._print_history()
 
@@ -428,7 +423,7 @@ if __name__ == "__main__":
     if done:
         print("return {'done': True}")
     else:
-        subtask = planning_expert.rethink_subtask_list("", SOM)
+        subtask = planning_expert.rethink_subtask("", SOM)
     
     planning_expert._print_history()
     
