@@ -14,6 +14,7 @@ This project was developed as part of the practical course _**Development of LLM
   - [2. Barry Agent Installation](#2-barry-agent-installation)
   - [3. Perception Expert Configuration](#3-perception-expert-configuration)
 - [⚙️ Execution](#️-execution)
+- [🔄 Reproducing Evaluated Tasks](#-reproducing-evaluated-tasks)
 - [👥 Authors](#-authors)
 
 ---
@@ -117,6 +118,26 @@ python run_barry.py \
   --domain os \
   --task 28cc3b7e-b194-4bc9-8353-d04c0f4d56d2
 ```
+
+---
+
+## 🔄 Reproducing Evaluated Tasks
+
+To reproduce the exact tasks that were evaluated during the development and testing of Barry Agent, you can find the complete list of task identifiers and their corresponding domains in the **Final Report** located in the `Resources/` directory of this repository.
+
+The appendix of the Final Report contains detailed information about all evaluated tasks, including their identifiers and domain categories. To run any of these specific tasks, use the command structure shown in the execution section above, replacing the `--domain` and `--task` parameters with the desired values from the report.
+
+**Example command structure:**
+
+```bash
+python run_barry.py \
+  --model gemini-2.5-flash \
+  --observation_type screenshot \
+  --action_space pyautogui \
+  --domain [DOMAIN_FROM_REPORT] \
+  --task [TASK_ID_FROM_REPORT]
+```
+
 
 ---
 

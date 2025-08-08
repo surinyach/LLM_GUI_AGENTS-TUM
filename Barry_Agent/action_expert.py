@@ -143,21 +143,4 @@ class ActionExpert:
             raise
 
 if __name__ == "__main__":
-    logger.info("Testing the Action Expert")
-    logger.info("Processing instruction:")
-    action_expert = ActionExpert()
-
-    current_instruction="Open the browser"
-    action_expert.set_current_instruction(current_instruction)
-
-    new_screenshot_path = "./screenshot.png"
-    new_screenshot = Image.open(new_screenshot_path)
-
-    new_som_screenshot_path = "./annotated.png"
-    new_som_screenshot = Image.open(new_som_screenshot_path)
-
-    new_som_description="""
-    """
-
-    action = action_expert.process_instruction(new_screenshot, new_som_screenshot, new_som_description)
-    print(action)
+    pass
